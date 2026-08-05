@@ -1,0 +1,65 @@
+* { box-sizing: border-box; }
+html { min-width: 0; background: var(--color-paper); }
+body { margin: 0; min-height: 100dvh; min-width: 0; color: var(--color-ink); background: var(--color-paper); font-family: var(--font-sans); line-height: 1.65; font-variant-numeric: tabular-nums lining-nums; font-feature-settings: "tnum" 1, "lnum" 1; }
+a { color: inherit; }
+button, input, select, textarea { font: inherit; font-family: var(--font-sans); }
+button, summary, a { -webkit-tap-highlight-color: transparent; }
+summary { list-style-position: outside; }
+:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 3px; }
+h1, h2, h3, p { margin-top: 0; }
+h1, h2 { text-wrap: balance; }
+img, svg { max-width: 100%; }
+.skip-link { position: fixed; top: var(--space-3); left: var(--space-3); z-index: 100; transform: translateY(-180%); padding: var(--space-3) var(--space-4); background: var(--color-ink); color: var(--color-on-ink); border-radius: var(--radius-small); }
+.skip-link:focus { transform: translateY(0); }
+.visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
+[hidden] { display: none !important; }
+input, select, textarea, button { color: inherit; }
+input, select, textarea { width: 100%; min-height: var(--control-field-min-height); padding: 0.72rem 0.85rem; border: 1px solid var(--color-line); border-radius: var(--radius-small); background: var(--color-surface); }
+textarea { min-height: 7rem; resize: vertical; }
+
+/* UI consistency V1.2: native choice controls must not inherit full-width text-field geometry. */
+:is(input[type="checkbox"], input[type="radio"]) {
+  inline-size: var(--control-choice-size);
+  block-size: var(--control-choice-size);
+  min-inline-size: var(--control-choice-size);
+  min-block-size: var(--control-choice-size);
+  width: var(--control-choice-size);
+  height: var(--control-choice-size);
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border-radius: 0.25rem;
+  accent-color: var(--color-accent);
+  flex: 0 0 var(--control-choice-size);
+}
+input[type="radio"] { border-radius: 50%; }
+fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+small { line-height: 1.45; }
+
+/* 数字は全体と同じゴシック系で表示し、桁と小数点を見分けやすくする。 */
+:is(input[type="number"], input[type="date"], input[type="time"], output, time) {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+:is(input[type="number"], input[type="date"], input[type="time"]) {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+/* 長い本人入力や識別子が画面幅を押し広げないための共通折返し */
+:is(h1, h2, h3, p, li, dd, dt, a, button, label, summary, strong, small, span) {
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+@media print {
+  a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.8em; overflow-wrap: anywhere; }
+}
