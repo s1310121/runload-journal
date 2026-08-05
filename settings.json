@@ -1,0 +1,7 @@
+{
+  "liveServer.settings.root": "/docs",
+  "liveServer.settings.port": 5500,
+  "liveServer.settings.host": "127.0.0.1",
+  "liveServer.settings.CustomBrowser": "microsoft-edge",
+  "liveServer.settings.NoBrowser": false
+}
