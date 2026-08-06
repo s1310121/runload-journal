@@ -33,7 +33,7 @@ function percentage(value) {
 function surfaceLabel(value) {
   return {
     REF_HARD_EVEN_STABLE: "硬く平らで安定した基準路面",
-    DRY_STABLE_GRASS_TURF: "乾いた安定した芝",
+    DRY_STABLE_GRASS_TURF: "乾いた安定した天然芝・人工芝",
     DEEP_DRY_SOFT_SAND: "深く乾いた柔らかい砂",
     EXPLICIT_UNEVEN: "明確な凹凸・不整地（説明のみ）",
     KNOWN_OTHER: "把握済み・記録のみ",

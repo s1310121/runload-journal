@@ -1,4 +1,4 @@
-export const RUNNING_GOAL_SUPPORT_VERSION = "runload-running-goal-support-v1";
+export const RUNNING_GOAL_SUPPORT_VERSION = "runload-running-goal-support-v2";
 
 export const RUNNING_GOAL_OPTIONS = Object.freeze([
   Object.freeze({
@@ -15,8 +15,8 @@ export const RUNNING_GOAL_OPTIONS = Object.freeze([
     label: "習慣化",
     supportTitle: "走行日と休養日を同じ記録として残す",
     supportDescription: "連続日数や達成度を作らず、その日の事実を自分のペースで残します。",
-    articleId: "history-compatible",
-    articleReason: "休養や未記録を0や失敗として扱わない履歴の読み方です。",
+    articleId: "goals-and-recording-differ",
+    articleReason: "記録や目標の使い方を、一つの成功基準へ決めない内容です。",
     action: Object.freeze({ screen: "notebook", label: "休む日のメモも残す", theme: "rest-note" }),
   }),
   Object.freeze({
@@ -24,8 +24,8 @@ export const RUNNING_GOAL_OPTIONS = Object.freeze([
     label: "距離を伸ばす",
     supportTitle: "距離とほかの条件を分けて見返す",
     supportDescription: "距離を増やすことを正解にせず、次回に確認したい条件を1つ残します。",
-    articleId: "model-total-v27",
-    articleReason: "距離が比較用推定値の土台になることと、その限界を説明します。",
+    articleId: "training-progression-no-universal-rule",
+    articleReason: "一つの増加割合を全員の正解にせず、予定と実績を見返す内容です。",
     action: Object.freeze({ screen: "notebook", label: "次回見る条件を残す", theme: "next-note" }),
   }),
   Object.freeze({

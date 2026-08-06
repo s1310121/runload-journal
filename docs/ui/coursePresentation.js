@@ -26,7 +26,7 @@ export function slopeSummary(course = {}) {
 export function surfaceModelSummary(course = {}) {
   const labels = {
     REF_HARD_EVEN_STABLE: "硬く平らで安定（結果に使用）",
-    DRY_STABLE_GRASS_TURF: "乾いた安定した芝・ターフ（確認できる範囲で使用）",
+    DRY_STABLE_GRASS_TURF: "乾いた安定した天然芝・人工芝（確認できる範囲で使用）",
     DEEP_DRY_SOFT_SAND: "深く乾いた柔らかい砂（確認できる範囲で使用）",
     EXPLICIT_UNEVEN: "明確な凹凸あり（説明のみ）",
     KNOWN_OTHER: "把握済み・上記以外（説明のみ）",

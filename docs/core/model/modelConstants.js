@@ -42,7 +42,7 @@ export const SURFACE_FIELDS = Object.freeze([
   Object.freeze({ recordKey: "treadmillPercent", modelKey: "treadmill", legacyKey: "surface_treadmill_pct", label: "トレッドミル" }),
   Object.freeze({ recordKey: "soilPercent", modelKey: "soil", legacyKey: "surface_soil_pct", label: "締まった土道" }),
   Object.freeze({ recordKey: "trailPercent", modelKey: "trail", legacyKey: "surface_trail_pct", label: "不整地トレイル" }),
-  Object.freeze({ recordKey: "naturalGrassPercent", modelKey: "natural_grass", legacyKey: "surface_natural_grass_pct", label: "芝生" }),
+  Object.freeze({ recordKey: "naturalGrassPercent", modelKey: "natural_grass", legacyKey: "surface_natural_grass_pct", label: "天然芝" }),
   Object.freeze({ recordKey: "artificialTurfPercent", modelKey: "artificial_turf", legacyKey: "surface_artificial_turf_pct", label: "人工芝" }),
   Object.freeze({ recordKey: "sandPercent", modelKey: "sand", legacyKey: "surface_sand_pct", label: "砂地" }),
 ]);
@@ -70,7 +70,7 @@ export const SURFACE_INTERPRETATION_GUIDE = Object.freeze({
   treadmill: Object.freeze({ label: "トレッドミル", traits: ["速度一定", "ベルト環境"], interpretation: "屋外路面とは違い、速度が一定になりやすい走行環境として扱う。" }),
   soil: Object.freeze({ label: "締まった土道", traits: ["やや柔らかい", "条件依存"], interpretation: "細かいグラベル等の近接根拠はあるが、土の湿り・締まり具合で性質が変わるため、補助確認に留める。" }),
   trail: Object.freeze({ label: "不整地トレイル", traits: ["不整地性", "低安定性"], interpretation: "凹凸や接地のばらつきが出やすい路面として、接地の安定や姿勢の見返しに使う。" }),
-  natural_grass: Object.freeze({ label: "芝生", traits: ["柔らかい", "やや不安定"], interpretation: "柔らかさや状態差が出やすい路面として、接地感と脚への感じ方を見返す材料にする。" }),
+  natural_grass: Object.freeze({ label: "天然芝", traits: ["柔らかい", "やや不安定"], interpretation: "柔らかさや状態差が出やすい路面として、接地感と脚への感じ方を見返す材料にする。" }),
   artificial_turf: Object.freeze({ label: "人工芝", traits: ["下地依存", "摩擦/反発条件依存"], interpretation: "下地・温度・摩擦で性質が変わりやすい路面として、記録時の感じ方と合わせて見返す。" }),
   sand: Object.freeze({ label: "砂地", traits: ["沈み込み大", "低安定性"], interpretation: "衝撃増加ではなく、沈み込み・推進効率低下・足部/下腿制御として扱う。" }),
 });
