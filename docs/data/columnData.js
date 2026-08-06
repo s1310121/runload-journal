@@ -7,6 +7,9 @@ import { buildArticleEvidenceGovernance } from "./evidenceGovernanceData.js";
 export const COLUMN_CATEGORIES = Object.freeze([
   "結果の読み方",
   "入力と振り返り",
+  "走りとのつき合い方",
+  "走る前・走っている間",
+  "走った後の整え方",
   "部位・コース",
   "相談・共有",
 ]);
@@ -101,13 +104,167 @@ const HADDAD_2017 = Object.freeze({
 
 const LINTON_2025 = Object.freeze({
   sourceId: "APP-COL-LINTON",
-  title: "Running-Centred Injury Prevention Support: A Scoping Review on Current Injury Context Reduction Practices for Runners",
+  title: "Running-Centred Injury Prevention Support: A Scoping Review on Current Injury Risk Reduction Practices for Runners",
   organization: "Translational Sports Medicine",
   year: "2025",
   url: "https://doi.org/10.1155/tsm2/3007544",
   sourceType: "scopingReview",
   sourceTypeLabel: "スコーピングレビュー",
   lastChecked: "2026-07-31",
+});
+
+const BUIST_2008 = Object.freeze({
+  sourceId: "APP-COL-BUIST",
+  title: "No Effect of a Graded Training Program on the Number of Running-Related Injuries in Novice Runners: A Randomized Controlled Trial",
+  organization: "The American Journal of Sports Medicine",
+  year: "2008",
+  url: "https://doi.org/10.1177/0363546507307505",
+  sourceType: "primaryStudy",
+  sourceTypeLabel: "原著研究",
+  lastChecked: "2026-08-06",
+});
+
+const KRUKOWSKI_2024 = Object.freeze({
+  sourceId: "APP-COL-KRUKOWSKI",
+  title: "Impact of feedback generation and presentation on self-monitoring behaviors, dietary intake, physical activity, and weight: a systematic review and meta-analysis",
+  organization: "International Journal of Behavioral Nutrition and Physical Activity",
+  year: "2024",
+  url: "https://doi.org/10.1186/s12966-023-01555-6",
+  sourceType: "systematicReview",
+  sourceTypeLabel: "システマティックレビュー・無料全文",
+  lastChecked: "2026-08-06",
+});
+
+const KARAHANOGLU_2021 = Object.freeze({
+  sourceId: "APP-COL-KARAHANOGLU",
+  title: "How Are Sports-Trackers Used by Runners? Running-Related Data, Personal Goals, and Self-Tracking in Running",
+  organization: "Sensors",
+  year: "2021",
+  url: "https://doi.org/10.3390/s21113687",
+  sourceType: "primaryStudy",
+  sourceTypeLabel: "原著研究・無料全文",
+  lastChecked: "2026-08-06",
+});
+
+const JANSSEN_2020 = Object.freeze({
+  sourceId: "APP-COL-JANSSEN",
+  title: "Understanding Different Types of Recreational Runners and How They Use Running-Related Technology",
+  organization: "International Journal of Environmental Research and Public Health",
+  year: "2020",
+  url: "https://doi.org/10.3390/ijerph17072276",
+  sourceType: "primaryStudy",
+  sourceTypeLabel: "原著研究・無料全文",
+  lastChecked: "2026-08-06",
+});
+
+const WINTER_2020 = Object.freeze({
+  sourceId: "APP-COL-WINTER",
+  title: "A Multifactorial Approach to Overuse Running Injuries: A 1-Year Prospective Study",
+  organization: "Sports Health",
+  year: "2020",
+  url: "https://doi.org/10.1177/1941738119888504",
+  sourceType: "primaryStudy",
+  sourceTypeLabel: "原著研究",
+  lastChecked: "2026-08-06",
+});
+
+const BESOMI_2025 = Object.freeze({
+  sourceId: "APP-COL-BESOMI",
+  title: "Exploring contextual factors for management and prevention of running-related injuries: runners and experts’ perspectives",
+  organization: "BMJ Open Sport & Exercise Medicine",
+  year: "2025",
+  url: "https://doi.org/10.1136/bmjsem-2024-002413",
+  sourceType: "primaryStudy",
+  sourceTypeLabel: "原著研究・無料全文",
+  lastChecked: "2026-08-06",
+});
+
+const COOLDOWN_VAN_HOOREN_2018 = Object.freeze({
+  sourceId: "APP-COL-COOLDOWN-VAN-HOOREN",
+  title: "Do We Need a Cool-Down After Exercise? A Narrative Review of the Psychophysiological Effects and the Effects on Performance, Injuries and the Long-Term Adaptive Response",
+  organization: "Sports Medicine",
+  year: "2018",
+  url: "https://link.springer.com/article/10.1007/s40279-018-0916-2",
+  sourceType: "reviewPaper",
+  sourceTypeLabel: "レビュー・無料全文",
+  lastChecked: "2026-08-06",
+});
+
+const AFONSO_2021 = Object.freeze({
+  sourceId: "APP-COL-AFONSO",
+  title: "The Effectiveness of Post-exercise Stretching in Short-Term and Delayed Recovery of Strength, Range of Motion and Delayed Onset Muscle Soreness: A Systematic Review and Meta-Analysis of Randomized Controlled Trials",
+  organization: "Frontiers in Physiology",
+  year: "2021",
+  url: "https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2021.677581/full",
+  sourceType: "systematicReview",
+  sourceTypeLabel: "システマティックレビュー・無料全文",
+  lastChecked: "2026-08-06",
+});
+
+const HEW_BUTLER_2017 = Object.freeze({
+  sourceId: "APP-COL-HEW-BUTLER",
+  title: "Exercise-Associated Hyponatremia: 2017 Update",
+  organization: "Frontiers in Medicine",
+  year: "2017",
+  url: "https://www.frontiersin.org/journals/medicine/articles/10.3389/fmed.2017.00021/full",
+  sourceType: "reviewPaper",
+  sourceTypeLabel: "レビュー・無料全文",
+  lastChecked: "2026-08-06",
+});
+
+const ARENT_2020 = Object.freeze({
+  sourceId: "APP-COL-ARENT",
+  title: "Nutrient Timing: A Garage Door of Opportunity?",
+  organization: "Nutrients",
+  year: "2020",
+  url: "https://www.mdpi.com/2072-6643/12/7/1948",
+  sourceType: "reviewPaper",
+  sourceTypeLabel: "レビュー・無料全文",
+  lastChecked: "2026-08-06",
+});
+
+const DOHERTY_2021 = Object.freeze({
+  sourceId: "APP-COL-DOHERTY-SLEEP",
+  title: "The Sleep and Recovery Practices of Athletes",
+  organization: "Nutrients",
+  year: "2021",
+  url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC8072992/",
+  sourceType: "primaryStudy",
+  sourceTypeLabel: "原著研究・無料全文",
+  lastChecked: "2026-08-06",
+});
+
+const GRUNDSTEIN_2019 = Object.freeze({
+  sourceId: "APP-COL-GRUNDSTEIN-HEAT",
+  title: "Influence of Race Performance and Environmental Conditions on Exertional Heat Stroke Prevalence Among Runners Participating in a Warm Weather Road Race",
+  organization: "Frontiers in Sports and Active Living",
+  year: "2019",
+  url: "https://www.frontiersin.org/journals/sports-and-active-living/articles/10.3389/fspor.2019.00042/full",
+  sourceType: "primaryStudy",
+  sourceTypeLabel: "原著研究・無料全文",
+  lastChecked: "2026-08-06",
+});
+
+const JSPO_HEAT_GUIDANCE_2025 = Object.freeze({
+  sourceId: "APP-GUIDE-JSPO-HEAT",
+  title: "スポーツ活動中の熱中症予防ガイドブック",
+  organization: "公益財団法人日本スポーツ協会",
+  year: "2025",
+  url: "https://www.japan-sports.or.jp/medicine/heatstroke/tabid523.html",
+  sourceType: "publicGuidance",
+  sourceTypeLabel: "公的資料",
+  lastChecked: "2026-08-06",
+});
+
+const KWON_2023 = Object.freeze({
+  sourceId: "APP-COL-KWON-TALK",
+  title: "The talk test as a useful tool to monitor aerobic exercise intensity in healthy population",
+  organization: "Journal of Exercise Rehabilitation",
+  year: "2023",
+  url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC10331140/",
+  sourceType: "primaryStudy",
+  sourceTypeLabel: "原著研究・無料全文",
+  lastChecked: "2026-08-06",
 });
 
 function article(input) {
@@ -118,7 +275,7 @@ function article(input) {
     practicePoints: Object.freeze([...(input.practicePoints || [])]),
     sources: Object.freeze([...(input.sources || [])]),
     evidenceGovernance: buildArticleEvidenceGovernance(input.id, input.sources || []),
-    lastReviewed: "2026-08-05",
+    lastReviewed: "2026-08-06",
   });
 }
 
@@ -233,7 +390,7 @@ export const COLUMN_ARTICLES = Object.freeze([
     body: [
       "研究では、路面の硬さが変わると足裏の圧や下肢の筋活動が変わること、凹凸のある地面では平らな地面と比べて身体の安定を保つ動きが増えることが報告されています。",
       "上り・下りでは、かかと寄りか前足部寄りかといった足のつき方によっても、足裏の圧が分布する場所が変わることがあります。",
-      "実際の路面は、同じ『舗装路』『芝』という名前でも状態が同じとは限りません。よく分からない場合は無理に決めず、分からないまま残すと、別の条件と取り違えずに振り返れます。",
+      "実際の路面は、同じ『舗装路』『天然芝』という名前でも状態が同じとは限りません。よく分からない場合は無理に決めず、分からないまま残すと、別の条件と取り違えずに振り返れます。",
     ],
     practicePoints: [
       "路面名だけでなく、硬さ・凹凸・乾湿を思い出す。",
@@ -302,6 +459,187 @@ export const COLUMN_ARTICLES = Object.freeze([
     ],
     caution: "予定値は最適な練習、達成可能性、身体状態、走行可否を示しません。",
     sources: [PROJECT_V27],
+  }),
+  article({
+    id: "training-progression-no-universal-rule",
+    title: "練習量に『毎週○％』という万能ルールはあるか",
+    category: "走りとのつき合い方",
+    tags: ["練習量", "10％ルール", "距離", "予定と実績"],
+    lead: "毎週同じ割合で距離を増やせば、誰にでも安全になるという決まりは確認されていません。",
+    summary: "一つの割合を正解にせず、予定と実績、その日の感じ方や背景を分けて見返すことが大切です。",
+    body: [
+      "初心者ランナーを対象とした研究では、練習量を毎週約10％ずつ増やす13週間のプログラムと、標準的なプログラムが比較されました。この研究では、段階的に増やしたグループでランニングに関連するけがが少なくなったとは確認されませんでした。",
+      "これは、練習量を急に増やしてよいという意味ではありません。また、この研究だけから、10％を全員に当てはまる安全な増やし方とは言えません。",
+      "ランナーへの支援をまとめた別の研究でも、取り組み方や結果には幅があり、一つの方法を全員へ当てはめることには注意が必要とされています。予定は守るべき正解ではなく、実際にどう走ったかを後で振り返るための記録として使えます。",
+    ],
+    practicePoints: [
+      "予定どおり、変更、未実施のどれも事実として残す。",
+      "割合だけでなく、距離、時間、回数、コースも分けて見る。",
+      "次の予定は、直前の一回だけで決めず、自分の記録を見ながら考える。",
+    ],
+    caution: "この記事は、個人に合う増加率、けがを防ぐ方法、走ってよいかどうかを示しません。",
+    sources: [BUIST_2008, LINTON_2025],
+  }),
+  article({
+    id: "goals-and-recording-differ",
+    title: "記録や目標の使い方は、人によって違う",
+    category: "走りとのつき合い方",
+    tags: ["記録", "目標", "振り返り", "ランニング用機器"],
+    lead: "走る目的や、記録から知りたいことは、同じ人でも状況に応じて変わることがあります。",
+    summary: "距離や連続日数だけを成功の基準にせず、自分が今知りたいことに合わせて記録を選びます。",
+    body: [
+      "ランニング用機器を使う人を調べた研究では、記録は走った事実を残すためにも、目標を考えて次の行動を選ぶためにも使われていました。また、本人の必要性、走る力、周囲の状況が変わると、目標も変わっていました。",
+      "別の大規模調査でも、ランナーの考え方や関心、技術の使い方は同じではありませんでした。研究で分けられたタイプは、利用者を当てはめるための正解ではなく、人によって使い方が違うことを理解する材料です。",
+      "自己記録とフィードバックをまとめた研究では、身体活動を支える可能性が示される一方、どの見せ方が最もよいかは一定していませんでした。記録が多いほどよいと決めず、今の目的に必要なものだけを見る方法もあります。",
+    ],
+    practicePoints: [
+      "今の自分が覚えておきたいことを一つ選ぶ。",
+      "目標が変わったら、以前の目標に無理に合わせない。",
+      "記録しない日や休む日を、失敗や0点として扱わない。",
+    ],
+    caution: "この記事は、記録を続けたときの効果や、特定の目標・機器・アプリが他よりよいことを保証しません。",
+    sources: [KARAHANOGLU_2021, JANSSEN_2020, KRUKOWSKI_2024],
+  }),
+  article({
+    id: "context-not-single-cause",
+    title: "走った日の背景を、一つの原因に決めない",
+    category: "走りとのつき合い方",
+    tags: ["生活背景", "環境", "個人差", "相談準備"],
+    lead: "走った日の感じ方には、練習、過去の経験、生活や環境など、複数の背景が重なることがあります。",
+    summary: "一つの記録だけで原因を決めず、分かっている事実と本人の感じ方を分けて残します。",
+    body: [
+      "ランナーを支える方法を整理した研究では、練習だけでなく、本人の状況や周囲からの支援などを含めて考える必要があり、一つの要因だけで全員を説明することは難しいとされています。",
+      "1年間ランナーを追った研究でも、練習、過去の経験、身体的な特徴、走り方など複数の項目が検討されました。ただし、対象人数や調べ方に限界があり、個人の結果を正確に予測できる研究ではありませんでした。",
+      "ランナーと専門家への聞き取りでは、経験や状況によって情報の受け取り方や行動が異なり、経験の少ない人が情報の確かさを判断しにくい場合も報告されています。これは、どれか一つを原因と決めるのではなく、分かる範囲の事実を整理する意味を示しています。",
+      "天候、睡眠、生活背景、本人の感じ方は、それぞれ別の記録として残せます。何日かを見返すときも、同時に記録されていることだけで原因と結果を決めず、必要なら相談相手へ事実として共有します。",
+    ],
+    practicePoints: [
+      "天候、睡眠、走った内容、本人の感じ方を別々に残す。",
+      "一回だけの一致から、原因や良し悪しを決めない。",
+      "相談するときは、推測より先に日付と記録した事実を伝える。",
+    ],
+    caution: "本人メモや数値から、原因、診断、けがの確率、走ってよいかどうかを推定する記事ではありません。",
+    sources: [LINTON_2025, WINTER_2020, BESOMI_2025],
+  }),
+  article({
+    id: "cooldown-stretching-limits",
+    title: "クールダウンやストレッチで、できること・できないこと",
+    category: "走った後の整え方",
+    tags: ["クールダウン", "ストレッチ", "筋肉痛", "回復"],
+    lead: "クールダウンやストレッチは、行えば必ず筋肉痛やけがを防げる方法ではありません。",
+    summary: "目的や感じ方には違いがあります。回復への働きを一つに決めつけず、研究で確認された範囲と限界を分けて見ます。",
+    body: [
+      "運動後の軽い運動をまとめたレビューでは、翌日以降の運動成績や筋肉痛などへの効果は全体として小さいか、結果が一定していませんでした。また、クールダウンによってけがを防げることが確認されたわけではありません。",
+      "運動後のストレッチを比べたシステマティックレビューでは、何もしないで休んだ場合と比べて、筋肉痛や筋力の戻り方が明らかに良くなるとは確認されませんでした。ただし、研究数や研究方法には限界があり、証拠の確かさはとても低いと評価されています。",
+      "これらは、クールダウンやストレッチをしてはいけない、または全く意味がないという結論ではありません。気持ちの切り替えや本人の好みなど、回復効果とは別の目的もあります。行った内容と、その後にどう感じたかを分けて残すと振り返りやすくなります。",
+    ],
+    practicePoints: [
+      "行った内容と、その後の本人の感じ方を別々に記録する。",
+      "行ったかどうかだけを、その日の成功・失敗にしない。",
+      "筋肉痛の有無だけで、次に走ってよいかを決めない。",
+    ],
+    caution: "この記事は、方法や時間を指定せず、治療効果、けがの予防、回復の保証、走行可否を示しません。",
+    sources: [COOLDOWN_VAN_HOOREN_2018, AFONSO_2021],
+  }),
+  article({
+    id: "hydration-not-more-is-better",
+    title: "水分補給は、多いほどよいわけではない",
+    category: "走った後の整え方",
+    tags: ["水分補給", "発汗", "暑さ", "個人差"],
+    lead: "走る前後や途中の水分補給は、全員が同じ量を飲めばよいものではありません。",
+    summary: "走った時間や環境、本人の記録を分けて振り返り、飲んだ量の多さだけを良し悪しにしません。",
+    body: [
+      "汗のかき方や走る時間、気温などは人や日によって違います。そのため、全員に共通する一つの量だけで、水分補給の良し悪しを決めることはできません。",
+      "長時間の運動などを扱ったレビューでは、のどの渇きを超えて飲み続けることが、運動に伴う低ナトリウム血症（血液中のナトリウム濃度が低くなる状態）の主な背景として整理されています。また、飲み過ぎを避ける考え方として、のどの渇きに応じて飲む方法が示されています。これは、全員に同じ量を示すものではありません。",
+      "RunLoadには天候や食事・水分の自己記録を残せますが、必要な水分量や身体の水分状態を計算していません。何をどのくらい飲んだかは事実として残し、量の多さだけを安心や不足の判定に変えないことが大切です。",
+    ],
+    practicePoints: [
+      "走った時間、天候、飲んだものを分けて記録する。",
+      "本数や量だけを、水分が足りたかどうかの判定にしない。",
+      "体調について気になることがある場合は、アプリで判断せず適切な相談先へ伝える。",
+    ],
+    caution: "この記事は、個人の水分量、電解質の取り方、脱水や飲み過ぎの判定、治療、走行可否を示しません。",
+    sources: [HEW_BUTLER_2017],
+  }),
+  article({
+    id: "post-run-food-timing-context",
+    title: "走った後の食事は、早さだけで決まらない",
+    category: "走った後の整え方",
+    tags: ["食事", "栄養", "走った後", "個人差"],
+    lead: "走った後の食事は、何分以内かだけでなく、走った内容や普段の食事も含めて考えます。",
+    summary: "一つの短い時間帯を全員共通の正解にせず、運動の内容と一日の食事を分けて見ます。",
+    body: [
+      "栄養を取る時機についてまとめたレビューでは、運動前・運動中・運動後の食事は互いにつながっており、運動後の一つの短い時間だけで考えるものではないと整理されています。",
+      "食事の時機がどれほど重要かは、運動の種類、強さ、長さ、回数や、次の運動までの間隔などによって変わります。同じ日に複数回運動する場合のように、短い時間での回復が必要な場面と、そうでない場面を同じに扱うことはできません。",
+      "このレビューでは、一日の食事全体や運動内容が土台にあり、その上で食事の時機を考えるという見方が示されています。RunLoadの食事・水分メモは本人の記録であり、栄養状態や回復を評価するものではありません。",
+    ],
+    practicePoints: [
+      "食べた内容と時刻を、良し悪しを付けずに記録する。",
+      "次の運動までの間隔など、その日の予定も別に残す。",
+      "早く食べたことや補助食品を使ったことだけを、よりよい回復と決めない。",
+    ],
+    caution: "この記事は、食事量、食品や補助食品、摂取時刻を個別に勧めず、栄養不足、回復効果、走行可否を判定しません。",
+    sources: [ARENT_2020],
+  }),
+  article({
+    id: "sleep-not-hours-only",
+    title: "睡眠は、『何時間なら正解』だけで決めない",
+    category: "走る前・走っている間",
+    tags: ["睡眠", "睡眠時間", "睡眠の質", "本人の感じ方"],
+    lead: "睡眠は、長さだけでなく、眠れた感じや普段との違いも分けて振り返ります。",
+    summary: "一つの睡眠時間を全員共通の正解にせず、睡眠時間、眠りの質、眠る時間帯、本人の感じ方を別々の情報として見ます。",
+    body: [
+      "競技者338人を対象にした研究では、必要な睡眠時間には個人差があり、睡眠時間だけでなく、眠りの質や眠る時間帯も含めて考える必要があると説明されています。対象はさまざまな競技の競技者であり、初心者ランナー全員に同じ時間を示した研究ではありません。",
+      "この研究では質問票や短期間の睡眠日誌が使われました。本人の記録は取り入れやすい一方、思い出し方による記録のずれもあります。そのため、一晩の記録だけで身体の回復や次の走りを決めることはできません。",
+      "RunLoadの睡眠メモは、本人が覚えている事実や感じ方を残す欄です。睡眠の質や回復を計算するものではありません。『短かった』『途中で目が覚めた』『いつもと違った』のように分けて残すと、後から普段との違いを見返しやすくなります。",
+    ],
+    practicePoints: [
+      "眠った時間と、眠れた感じを別々に記録する。",
+      "他の人の時間ではなく、自分の普段の記録と比べる。",
+      "一晩の記録だけで、原因や次に走ってよいかを決めない。",
+    ],
+    caution: "この記事は、睡眠障害、回復状態、治療、必要な睡眠時間、走行可否を判定または処方しません。",
+    sources: [DOHERTY_2021],
+  }),
+  article({
+    id: "heat-not-temperature-only",
+    title: "暑い日の走りは、気温だけで判断しない",
+    category: "走る前・走っている間",
+    tags: ["暑さ", "気温", "暑さ指数", "WBGT", "天候"],
+    lead: "暑さを考えるときは、気温だけでなく、湿度や日差し、走る内容なども関係します。",
+    summary: "一つの気温だけで安全・危険を決めず、走る場所と時間の最新情報を別に確認します。",
+    body: [
+      "温暖な11.26kmのロードレースを15年間調べた研究では、気温だけではなく、湿度や日射などを含む暑さ指数（WBGT）と、参加者の平均ペースの両方が検討されました。特定の大会を後から振り返った研究のため、一緒に起きていたことは分かっても、個人の原因や安全を決めることはできません。",
+      "日本スポーツ協会の案内でも、スポーツ時の暑さを考える指標としてWBGTが使われています。公式情報は更新されるため、走る前には、アプリ内の過去記録だけでなく、走る場所と時間の最新のWBGTや公的な案内を確認します。",
+      "RunLoadには気温や天候のメモを残せますが、WBGTや暑さによる体調不良の可能性を計算していません。気温、天候、時間帯、日差しなどを分けて残すと、その日の環境を後から思い出しやすくなります。",
+    ],
+    practicePoints: [
+      "走る場所と時間の最新のWBGTや公的な案内を、アプリとは別に確認する。",
+      "気温、天候、時間帯、日差しの有無を分けて記録する。",
+      "一つの気温や過去記録だけを、安全・危険の判定にしない。",
+    ],
+    caution: "この記事は、熱中症などの診断、個人の安全、必要な水分量、運動の中止・実施可否を判定しません。",
+    sources: [GRUNDSTEIN_2019, JSPO_HEAT_GUIDANCE_2025],
+  }),
+  article({
+    id: "talk-test-as-subjective-cue",
+    title: "ペースが分からないときは、会話のしやすさも手掛かりになる",
+    category: "走る前・走っている間",
+    tags: ["ペース", "会話", "走るときのきつさ", "RPE", "本人の感じ方"],
+    lead: "速度だけでなく、話しやすかったかどうかも、走っているときのきつさを振り返る手掛かりになります。",
+    summary: "会話できる・話しにくいという本人の感覚を、速度や走り全体のきつさ（RPE）とは別の情報として扱います。",
+    body: [
+      "健康な成人17人がトレッドミル上で決まった文章を話した研究では、会話のしやすさを3段階で確認する方法と、呼吸や心拍などの測定値との間に関連が見られました。",
+      "ただし、対象人数が少なく、平均年齢約27歳の健康な成人が実験室で行った研究です。会話のしやすさから、すべての初心者に共通する正確なペースや安全な強さを決めることはできません。",
+      "会話のしやすさは本人の感覚であり、速度やRPEと同じ情報ではありません。『話しやすかった』『短い言葉なら話せた』『話しにくかった』などを本人メモに残し、同じ人の記録を何回か見返す手掛かりにできます。",
+    ],
+    practicePoints: [
+      "走っている間の話しやすさを、自分の言葉で短く残す。",
+      "速度、RPE、会話のしやすさを、それぞれ別の記録として見る。",
+      "話せたかどうかだけで、安全・危険や目標ペースを決めない。",
+    ],
+    caution: "この記事は、心肺機能、病気、個人の目標ペース、走る強さ、走行可否を評価または処方しません。",
+    sources: [KWON_2023],
   }),
   article({
     id: "consultation-prep-v27",

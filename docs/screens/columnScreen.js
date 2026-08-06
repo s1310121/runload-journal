@@ -95,6 +95,8 @@ function buildColumnRecommendation(services, experience, allExperiences = [], co
   const { record, feedback = {}, supportDecision = {} } = experience;
   const route = supportDecision?.route || "normal";
   const course = record.course || {};
+  const environment = record.environmentContext || {};
+  const recovery = record.recoveryContext || {};
   const exertion = reportedRpeValue(record);
   const up = numberValue(course.upPercent, 0);
   const down = numberValue(course.downPercent, 0);
@@ -104,6 +106,20 @@ function buildColumnRecommendation(services, experience, allExperiences = [], co
   const runCount = allExperiences.filter(
     (item) => item?.record?.activityType === "run" && item?.v27ResultRecord?.state === "RUN",
   ).length;
+  const hasTemperature = environment.temperatureC !== null
+    && environment.temperatureC !== undefined
+    && String(environment.temperatureC).trim() !== "";
+  const hasNutritionHydrationContext = Boolean(
+    String(recovery.nutritionHydrationSummary || "").trim(),
+  );
+  const hasSleepContext = Boolean(String(recovery.sleepSummary || "").trim());
+  const hasRecordedContext = hasTemperature || [
+    environment.weather,
+    environment.windSummary,
+    environment.environmentNote,
+    recovery.nutritionHydrationSummary,
+    recovery.lifestyleNote,
+  ].some((value) => String(value || "").trim());
 
   if (route === "consult" || route === "urgent") {
     return recommendation("consultation-prep-v27", "本人が入力した内容を共有前に整理する記事です。");
@@ -121,6 +137,18 @@ function buildColumnRecommendation(services, experience, allExperiences = [], co
   if (observations.length) {
     return recommendation("regional-six-eight-28", `${observations.slice(0, 2).map((item) => item.label).join("、")}の本人入力と12部位の数値表示を分けて読む記事です。`);
   }
+  if (hasNutritionHydrationContext) {
+    return recommendation("hydration-not-more-is-better", "食事・水分の本人メモに関連する一般知識です。量や必要性を判断するものではありません。");
+  }
+  if (hasSleepContext) {
+    return recommendation("sleep-not-hours-only", "睡眠の本人メモに関連する一般知識です。睡眠時間や回復状態を判定するものではありません。");
+  }
+  if (hasTemperature) {
+    return recommendation("heat-not-temperature-only", "気温の本人記録に関連する一般知識です。安全・危険や運動可否を判断するものではありません。");
+  }
+  if (hasRecordedContext) {
+    return recommendation("context-not-single-cause", "天候や生活背景などの本人メモを、一つの原因へ決めずに見返す記事です。");
+  }
   if (course.gradeKnowledge === "KNOWN_PROFILE" && (up > 0 || down > 0)) {
     return recommendation("grade-and-coverage", "上り・下りで身体の使われ方が変わる理由を説明する記事です。");
   }
@@ -133,6 +161,9 @@ function buildColumnRecommendation(services, experience, allExperiences = [], co
   }
   if (exertion != null && exertion >= 7) {
     return recommendation("rpe-separated", "走り全体のきつさ（RPE）と数値結果を分けて見返す記事です。");
+  }
+  if (exertion != null) {
+    return recommendation("talk-test-as-subjective-cue", "走り全体のきつさ（RPE）の記録があるため、速度とは別に会話のしやすさを振り返る一般知識です。");
   }
   if (
     feedback?.checkStatus
@@ -194,6 +225,9 @@ function renderArticleSections(articles, categories, featuredId) {
     const descriptions = {
       "結果の読み方": "12部位の負荷傾向指数と、走行全体の比較用推定値の違いを説明します。",
       "入力と振り返り": "走り全体のきつさ（RPE）、過去比較、履歴、予定値を分けて見返します。",
+      "走りとのつき合い方": "練習量、目標、生活や環境の背景を、一つの正解や評価に変えずに考えます。",
+      "走る前・走っている間": "睡眠、暑さ、会話のしやすさを、一つの数値や基準だけで決めずに考えます。",
+      "走った後の整え方": "クールダウン、水分、食事を、一つの方法や量だけで決めずに考えます。",
       "部位・コース": "坂・路面・値が表す内容と限界を確認します。",
       "相談・共有": "本人入力と数値表示を区別し、共有資料の範囲を整えます。",
     };
@@ -289,7 +323,7 @@ export function renderColumnScreen({ services, context }) {
     ${renderPageHeading({ eyebrow: "読みもの", title: "記録を理解するための読みもの", description: "必要な記事だけを選び、一般知識として確認します。" })}
     ${renderFeaturedArticle(recommendation, target.experience, target.targetKind)}
     ${filterActive ? "" : renderGoalRelatedArticles(services, featured?.id || "")}
-    <section class="column-finder" aria-labelledby="column-finder-title"><div class="section-heading"><p>記事を探す</p><h2 id="column-finder-title">読みたい内容を探す</h2><p>カテゴリまたはキーワードを使い、必要な記事だけを絞り込みます。</p></div><form id="column-search-form" class="filter-panel" role="search">${preservedRecordId ? `<input type="hidden" name="recordId" value="${escapeHtml(preservedRecordId)}">` : ""}${preservedRegionId ? `<input type="hidden" name="regionId" value="${escapeHtml(preservedRegionId)}">` : ""}<label class="field"><span>記事を検索</span><input name="query" type="search" value="${escapeHtml(query)}" placeholder="例：坂道、RPE、過去比較"></label><label class="field"><span>カテゴリ</span><select name="category"><option value="all">すべて</option>${services.column.categories.map((item) => `<option value="${escapeHtml(item)}"${item === category ? " selected" : ""}>${escapeHtml(item)}</option>`).join("")}</select></label><button class="button button--primary" type="submit">記事を探す</button></form><p class="article-count">全${allArticles.length}件の記事・表示${articles.length}件</p>${filterActive ? `<a class="text-link" href="#/column${preservedRecordId ? `?recordId=${encodeURIComponent(preservedRecordId)}${preservedRegionId ? `&regionId=${encodeURIComponent(preservedRegionId)}` : ""}` : ""}">検索条件をクリア</a>` : ""}</section>
+    <section class="column-finder" aria-labelledby="column-finder-title"><div class="section-heading"><p>記事を探す</p><h2 id="column-finder-title">読みたい内容を探す</h2><p>カテゴリまたはキーワードを使い、必要な記事だけを絞り込みます。</p></div><form id="column-search-form" class="filter-panel" role="search">${preservedRecordId ? `<input type="hidden" name="recordId" value="${escapeHtml(preservedRecordId)}">` : ""}${preservedRegionId ? `<input type="hidden" name="regionId" value="${escapeHtml(preservedRegionId)}">` : ""}<label class="field"><span>記事を検索</span><input name="query" type="search" value="${escapeHtml(query)}" placeholder="例：睡眠、暑さ、坂道"></label><label class="field"><span>カテゴリ</span><select name="category"><option value="all">すべて</option>${services.column.categories.map((item) => `<option value="${escapeHtml(item)}"${item === category ? " selected" : ""}>${escapeHtml(item)}</option>`).join("")}</select></label><button class="button button--primary" type="submit">記事を探す</button></form><p class="article-count">全${allArticles.length}件の記事・表示${articles.length}件</p>${filterActive ? `<a class="text-link" href="#/column${preservedRecordId ? `?recordId=${encodeURIComponent(preservedRecordId)}${preservedRegionId ? `&regionId=${encodeURIComponent(preservedRegionId)}` : ""}` : ""}">検索条件をクリア</a>` : ""}</section>
     ${articles.length ? renderArticleSections(articles, services.column.categories, featured?.id || "") : renderEmptyState({ title: "条件に合う記事がありません", description: "検索語やカテゴリを変更してください。", actionLabel: "記事一覧へ戻る", actionScreen: "column" })}
     ${renderSourceIndex(allArticles)}
   </section>`;
