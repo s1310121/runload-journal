@@ -9,8 +9,8 @@ import { FORMAL_INPUT_CATALOG } from "./engine/data.js";
 import { hashCanonical } from "./engine/sha256.js";
 import { adaptStoredRecordToRegionalV1Ui, regionalV1ProfileContext } from "./regionalV1InputAdapter.js";
 
-export const REGIONAL_V1_MODEL_VERSION = "runload-regional-model-v1.1-a4";
-export const REGIONAL_V1_ENGINE_BUILD = "runload-prototype-integration-v1.1-a4-trace2";
+export const REGIONAL_V1_MODEL_VERSION = "runload-regional-model-v1.1-a5";
+export const REGIONAL_V1_ENGINE_BUILD = "runload-prototype-integration-v1.1-a5-trace1";
 export const REGIONAL_V1_OUTPUT_SEMANTIC_VERSION = "runload-regional-output-semantics-1.0";
 
 const ENDPOINT_META = Object.freeze({

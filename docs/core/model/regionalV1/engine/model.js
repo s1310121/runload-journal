@@ -16,6 +16,8 @@ import {
   CADENCE_JOINT_WORK_SOURCE,
   VASTUS_MEDIALIS_UPHILL_SOURCE,
   FIGURE_DIGITIZED_SPEED_SOURCE,
+  WILLER_2024_TABULATED_SPEED_WORK_SOURCE,
+  CHUMANOV_CADENCE_EMG_SOURCE,
 } from "./a3-sources.js";
 import { HORIGUCHI_PLANTAR_PEAK_PRESSURE_SOURCE } from "./a4-sources.js";
 
@@ -137,6 +139,51 @@ function a3FigureSpeedRoute(regionId,context){
     [],
     [{traceCode:"FIGURE_DIGITIZED_LOW_CONFIDENCE",message:`${entry.endpoint}; figure-derived functional-contribution proxy, bounded to 2–5 m/s level treadmill running with source-compatible natural cadence.`,numericEffectApplied:true}],
     sourceCoverage(entry.endpoint,"PARTIAL"),
+  );
+}
+
+function a3WillerSpeedWorkRoute(regionId,context){
+  const source=WILLER_2024_TABULATED_SPEED_WORK_SOURCE;
+  const entry=source.regions[regionId];
+  if(!entry||context.runSetting!==source.runSetting)return null;
+  if(Math.abs(context.gradePercent??0)>1e-9)return null;
+  if(!Number.isFinite(context.speedMps)||!Number.isFinite(context.cadenceSpm))return null;
+  if(context.speedMps<source.speedMps[0]-1e-12||context.speedMps>source.speedMps.at(-1)+1e-12)return null;
+  const expectedCadence=linearInterpolate(source.speedMps,source.sourceCadenceSpm,context.speedMps);
+  if(expectedCadence==null||Math.abs(context.cadenceSpm-expectedCadence)>expectedCadence*source.cadenceToleranceFraction)return null;
+  const ratio=linearInterpolate(source.speedMps,entry.ratiosToReference,context.speedMps);
+  if(ratio==null)return null;
+  return routeResult(
+    ratio,
+    "PARTIAL",
+    ["A5_WILLER_2024_TABULATED_SPEED_WORK"],
+    [],
+    [source.sourceId],
+    [],
+    [{traceCode:"TABULATED_FUNCTIONAL_WORK_SPEED_PROXY",message:`${entry.endpoint}; exact Table 2 means normalized to the 2.78 m/s source knot. Level treadmill and source-compatible natural cadence only.`,numericEffectApplied:Math.abs(ratio-1)>1e-12}],
+    {state:"PARTIAL",observedComponentIds:[...entry.observedComponentIds],missingComponentIds:[...entry.missingComponentIds],normalizedWeights:Object.fromEntries(entry.observedComponentIds.map(id=>[id,1/entry.observedComponentIds.length]))},
+  );
+}
+
+function a3PosteriorThighCadenceEmgRoute(context){
+  const source=CHUMANOV_CADENCE_EMG_SOURCE;
+  if(context.runSetting!==source.runSetting)return null;
+  if(Math.abs(context.gradePercent??0)>1e-9)return null;
+  if(!withinRelativeTolerance(context.speedMps,source.preferredSpeedMps,source.speedToleranceFraction))return null;
+  if(!Number.isFinite(context.cadenceSpm))return null;
+  if(Math.abs(context.cadenceSpm-source.cadenceSpm[0])<2)return null; // preferred cadence carries no cadence-specific effect
+  if(context.cadenceSpm<source.cadenceSpm[0]-1e-12)return null; // no cadence-decrease inference
+  const ratio=linearInterpolate(source.cadenceSpm,source.regionalRatios,context.cadenceSpm);
+  if(ratio==null)return partial("Cadence is outside the Chumanov 2012 preferred-to-+10% step-rate source range.");
+  return routeResult(
+    ratio,
+    "PARTIAL",
+    ["A5_CHUMANOV_2012_POSTERIOR_THIGH_CADENCE_EMG"],
+    ["RCM-INT-005"],
+    [source.sourceId],
+    [],
+    [{traceCode:"DIRECT_REGION_MATCHED_CADENCE_EMG_PARTIAL",message:`${source.endpoint}; ${source.aggregationRule}. Source-bounded group means only; no cadence-decrease extrapolation or personal prescription.`,numericEffectApplied:Math.abs(ratio-1)>1e-12}],
+    {state:"PARTIAL",observedComponentIds:["LATERAL_HAMSTRING_70_80_GC_EMG","MEDIAL_HAMSTRINGS_70_80_GC_EMG"],missingComponentIds:["OTHER_POSTERIOR_THIGH_COMPONENTS","DIRECT_FORCE_OR_TISSUE_LOAD"],normalizedWeights:{LATERAL_HAMSTRING_70_80_GC_EMG:0.5,MEDIAL_HAMSTRINGS_70_80_GC_EMG:0.5}},
   );
 }
 
@@ -305,6 +352,7 @@ export function evaluateRegionCondition(regionId,context,parameterOverrides={}){
   if(["BA-DISP-019","BA-DISP-021","BA-DISP-025"].includes(regionId))return directCurve(regionId,{...context,conflictingProtocol:false});
   if(regionId==="BA-DISP-014"){
     const jointGrade=a3JointGradeRoute(regionId,context); if(jointGrade)return jointGrade;
+    const speedWork=a3WillerSpeedWorkRoute(regionId,context); if(speedWork)return speedWork;
     const cadence=a3CadenceRoute(regionId,context); if(cadence)return cadence;
     return partial("No source-bounded hip condition route is active; exposure-only partial result is retained.");
   }
@@ -334,6 +382,7 @@ export function evaluateRegionCondition(regionId,context,parameterOverrides={}){
   if(regionId==="BA-DISP-016"){
     const jointGrade=a3JointGradeRoute(regionId,context); if(jointGrade)return jointGrade;
     const vm=a3VastusUphillRoute(context); if(vm)return vm;
+    if(Math.abs(gp)<=1e-9){const speedWork=a3WillerSpeedWorkRoute(regionId,context); if(speedWork)return speedWork;}
     let ratio=1,state="CALCULATED",routes=[],sources=[],pars=[],trace=[],interactions=[];
     const profile=sourceMatchedGradeSpeed(regionId,gp,v);
     if(profile){ratio*=profile.ratio;routes.push("BAT_SRC_019_GRADE_SPEED_PROFILE");sources.push("RCM-ANCH-A1-074..080");interactions.push("RCM-INT-001","RCM-INT-002");state="PARTIAL";trace.push({traceCode:"DESCRIPTIVE_SOURCE_PROFILE",message:"BAT-SRC-019 paired grade-speed means are retained as a bounded descriptive profile, not an inferential or causal calibration.",numericEffectApplied:true});}
@@ -347,6 +396,8 @@ export function evaluateRegionCondition(regionId,context,parameterOverrides={}){
     return routeResult(ratio,state,routes,interactions,sources,pars,trace);
   }
   if(regionId==="BA-DISP-018"){
+    const cadenceEmg=a3PosteriorThighCadenceEmgRoute(context); if(cadenceEmg)return cadenceEmg;
+    if(Math.abs(gp)<=1e-9){const speedWork=a3WillerSpeedWorkRoute(regionId,context); if(speedWork)return speedWork;}
     let ratio=1,routes=[],sources=[],interactions=[],trace=[],state="CALCULATED";
     const profile=sourceMatchedGradeSpeed(regionId,gp,v);
     if(profile){ratio*=profile.ratio;routes.push("BAT_SRC_019_GRADE_SPEED_PROFILE");sources.push("RCM-ANCH-A1-081..087");interactions.push("RCM-INT-001","RCM-INT-002");state="PARTIAL";trace.push({traceCode:"DESCRIPTIVE_SOURCE_PROFILE",message:"BAT-SRC-019 paired grade-speed means are retained as a bounded descriptive profile, not an inferential or causal calibration.",numericEffectApplied:true});}
@@ -358,6 +409,7 @@ export function evaluateRegionCondition(regionId,context,parameterOverrides={}){
   }
   if(regionId==="BA-DISP-023"){
     if(v<2||v>5)return partial("Calf speed route outside 2–5 m/s.");
+    if(Math.abs(gp)<=1e-9){const speedWork=a3WillerSpeedWorkRoute(regionId,context); if(speedWork)return speedWork;}
     const exact009=v>=3.9615&&v<=4.3785&&gp>0&&gp<=7?logInterpolate(GASTRO_GRADE_CURVE,gp):null;
     const profile=sourceMatchedGradeSpeed(regionId,gp,v);
     if(exact009!=null||profile){

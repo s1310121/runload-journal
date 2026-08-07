@@ -108,14 +108,10 @@ export const FIGURE_DIGITIZED_SPEED_SOURCE = Object.freeze({
       coverageState: "PARTIAL",
       sourceAnchorRange: "RCM-ANCH-A3-034..037",
     }),
-    "BA-DISP-016": Object.freeze({
-      endpoint: "vasti plus rectus femoris peak upward COM-acceleration contribution",
-      rawValuesMps2: [2.32, 2.52, 2.716, 3.11],
-      ratiosAtModelReference: [0.936995153473, 1.017770597738, 1.096930533118, 1.25605815832],
-      coverageState: "PARTIAL",
-      validSpeedDomainMps: [4, 5],
-      sourceAnchorRange: "RCM-ANCH-A3-038..039",
-    }),
+    // Retained only as a fallback below the Willer 2024 lower speed bound.
+    // Whenever the tabulated Willer paired speed-natural-cadence protocol is
+    // applicable, the Willer route has precedence and this digitized proxy is
+    // not used.
     "BA-DISP-023": Object.freeze({
       endpoint: "soleus plus gastrocnemius peak upward COM-acceleration contribution",
       rawValuesMps2: [15.748, 18.976, 20.748, 22.441],
@@ -124,4 +120,106 @@ export const FIGURE_DIGITIZED_SPEED_SOURCE = Object.freeze({
       sourceAnchorRange: "RCM-ANCH-A3-040..043",
     }),
   }),
+});
+
+// Willer et al. 2024, Table 2 (open-access article). Unlike the retained E02
+// gluteal speed route, these values are transcribed from a numeric table rather
+// than digitized from a figure. The source used level instrumented-treadmill
+// running at six fixed speeds; only the 2.78, 3.89, and 5.00 m/s knots are
+// admitted because the current Regional A5 speed domain ends at 5.00 m/s.
+// Source-compatible natural cadence is gated using Table 1 group means.
+// Every mapping remains PARTIAL: joint/functional-group work is a regional
+// mechanical-demand proxy and not direct muscle force or tissue load.
+export const WILLER_2024_TABULATED_SPEED_WORK_SOURCE = Object.freeze({
+  sourceId: "SRC-A5-001",
+  doi: "10.1111/sms.14690",
+  runSetting: "TREADMILL",
+  speedMps: Object.freeze([2.78, 3.89, 5.00]),
+  sourceCadenceSpm: Object.freeze([164, 170, 180]),
+  cadenceToleranceFraction: 0.05,
+  referenceSpeedMps: 2.78,
+  sourceLocator: "Willer et al. 2024, Tables 1-2; Scand J Med Sci Sports 34:e14690",
+  regions: Object.freeze({
+    "BA-DISP-014": Object.freeze({
+      endpoint: "hip total absolute mechanical work from all reported hip flexion/extension work terms across stance and swing",
+      rawWorkJPerKg: Object.freeze([0.81, 1.40, 2.15]),
+      ratiosToReference: Object.freeze([1.0, 1.7283950617283947, 2.654320987654321]),
+      coverageState: "PARTIAL",
+      observedComponentIds: Object.freeze(["HIP_REPORTED_ABSOLUTE_WORK"]),
+      missingComponentIds: Object.freeze(["DIRECT_TISSUE_LOAD"]),
+    }),
+    "BA-DISP-016": Object.freeze({
+      endpoint: "sum of reported absolute knee-extension work components (stance positive + stance negative + swing negative); anterior-thigh functional-group proxy",
+      rawWorkJPerKg: Object.freeze([0.68, 0.95, 1.19]),
+      ratiosToReference: Object.freeze([1.0, 1.3970588235294117, 1.75]),
+      coverageState: "PARTIAL",
+      observedComponentIds: Object.freeze(["KNEE_EXTENSOR_REPORTED_WORK"]),
+      missingComponentIds: Object.freeze(["DIRECT_QUADRICEPS_FORCE","DIRECT_TISSUE_LOAD"]),
+    }),
+    "BA-DISP-018": Object.freeze({
+      endpoint: "swing-phase negative knee-flexion work; posterior-thigh/hamstring-dominant functional proxy",
+      rawWorkJPerKg: Object.freeze([0.36, 0.55, 0.79]),
+      ratiosToReference: Object.freeze([1.0, 1.527777777777778, 2.1944444444444446]),
+      coverageState: "PARTIAL",
+      observedComponentIds: Object.freeze(["SWING_NEGATIVE_KNEE_FLEXOR_WORK"]),
+      missingComponentIds: Object.freeze(["DIRECT_HAMSTRING_FORCE","OTHER_POSTERIOR_THIGH_COMPONENTS"]),
+    }),
+    "BA-DISP-023": Object.freeze({
+      endpoint: "stance plantar-flexor total absolute work (positive + magnitude of negative work); posterior-lower-leg functional-group proxy",
+      rawWorkJPerKg: Object.freeze([1.49, 2.02, 2.52]),
+      ratiosToReference: Object.freeze([1.0, 1.3557046979865772, 1.691275167785235]),
+      coverageState: "PARTIAL",
+      observedComponentIds: Object.freeze(["ANKLE_PLANTAR_FLEXOR_STANCE_WORK"]),
+      missingComponentIds: Object.freeze(["DIRECT_SOLEUS_FORCE","DIRECT_GASTROCNEMIUS_FORCE","DIRECT_TISSUE_LOAD"]),
+    }),
+  }),
+  limitations: Object.freeze([
+    "11 male middle-distance runners; group means are not beginner-specific personal calibration",
+    "level instrumented-treadmill protocol only",
+    "source-compatible natural cadence is required because speed and cadence co-varied in the protocol",
+    "joint/functional-group work is a regional proxy, not measured tissue load or injury risk",
+    "no extrapolation outside 2.78-5.00 m/s",
+  ]),
+});
+
+
+// Current A5 source-bounded route: Chumanov et al. 2012.
+// The source manipulated step rate at each runner's preferred speed and reports
+// phase-specific normalized EMG. Only the posterior-thigh 70–80% gait-cycle
+// hamstring endpoint is promoted here because both medial and lateral hamstrings
+// were measured in the same source-defined phase and both increased significantly
+// at +10% step rate. The regional value is a transparent equal-weight geometric
+// aggregation of the two source components; it remains PARTIAL and is not a
+// direct tissue-force estimate or an individualized cadence prescription.
+export const CHUMANOV_CADENCE_EMG_SOURCE = Object.freeze({
+  sourceId: "SRC-A5-002",
+  doi: "10.1016/j.gaitpost.2012.02.023",
+  runSetting: "TREADMILL",
+  preferredSpeedMps: 2.9,
+  speedToleranceFraction: 0.05,
+  cadenceSpm: Object.freeze([172.6, 181.23, 189.86]),
+  relativeStepRate: Object.freeze([1.0, 1.05, 1.10]),
+  region: "BA-DISP-018",
+  endpoint: "posterior-thigh mid-late-swing (70–80% gait cycle) normalized EMG; equal-weight medial/lateral hamstring regional proxy",
+  components: Object.freeze({
+    LATERAL_HAMSTRING: Object.freeze({
+      rawNormalizedEmg: Object.freeze([1.1, 1.0, 1.3]),
+      ratiosToPreferred: Object.freeze([1.0, 0.9090909090909091, 1.1818181818181817]),
+    }),
+    MEDIAL_HAMSTRINGS: Object.freeze({
+      rawNormalizedEmg: Object.freeze([1.0, 1.1, 1.3]),
+      ratiosToPreferred: Object.freeze([1.0, 1.1, 1.3]),
+    }),
+  }),
+  regionalRatios: Object.freeze([1.0, 1.0, 1.23950136601927]),
+  aggregationRule: "equal-weight geometric mean of medial and lateral hamstring ratios within the same 70–80% gait-cycle endpoint",
+  coverageState: "PARTIAL",
+  sourceLocator: "Chumanov et al. 2012, Table 1; Gait & Posture 36(2):231–235",
+  limitations: Object.freeze([
+    "group-mean treadmill protocol",
+    "only preferred, +5%, and +10% step-rate conditions are supported",
+    "no cadence-decrease extrapolation",
+    "phase-specific EMG is a regional muscle-activation proxy, not muscle force or tissue load",
+    "absolute cadence anchors are group-mean coordinates and are not a personal preferred cadence",
+  ]),
 });

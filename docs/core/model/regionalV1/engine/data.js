@@ -1,6 +1,6 @@
 // Generated from locked Authority artifacts. Do not edit by hand.
-export const AUTHORITY_VERSION = "RunLoad Regional Calculation Model Authority V1.1 Amendment A4";
-export const PARAMETER_SET_VERSION = "RCM-V1.1-A4";
+export const AUTHORITY_VERSION = "RunLoad Regional Calculation Model Authority V1.1 Amendment A5";
+export const PARAMETER_SET_VERSION = "RCM-V1.1-A5";
 export const ADAPTER_VERSION = "RunLoad Input Preset Mapping V1.0";
 export const REGIONS = Object.freeze([
   {

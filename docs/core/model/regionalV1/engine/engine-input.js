@@ -2,7 +2,7 @@ import { AUTHORITY_VERSION, PARAMETER_SET_VERSION, ADAPTER_VERSION, REGIONS } fr
 import { isStandardShoeCandidate } from "./presets.js";
 import { failure, success } from "./utils.js";
 import { validateFormalInputBundle } from "./adapter.js";
-import { JOINT_GRADE_SOURCE, CADENCE_JOINT_WORK_SOURCE, FIGURE_DIGITIZED_SPEED_SOURCE } from "./a3-sources.js";
+import { JOINT_GRADE_SOURCE, CADENCE_JOINT_WORK_SOURCE, FIGURE_DIGITIZED_SPEED_SOURCE, WILLER_2024_TABULATED_SPEED_WORK_SOURCE } from "./a3-sources.js";
 import { HORIGUCHI_PLANTAR_PEAK_PRESSURE_SOURCE } from "./a4-sources.js";
 
 const value=(bundle,id)=>bundle.formalInputs[id]?.status==="KNOWN"?bundle.formalInputs[id].value:null;
@@ -49,6 +49,18 @@ function sectionPassesA3Cadence(section,runSetting){
     &&section.cadenceSpm>=CADENCE_JOINT_WORK_SOURCE.cadenceSpm[0]
     &&section.cadenceSpm<=CADENCE_JOINT_WORK_SOURCE.cadenceSpm.at(-1)
     &&Math.abs(section.cadenceSpm-CADENCE_JOINT_WORK_SOURCE.referenceCadenceSpm)>=2;
+}
+function sectionPassesWillerSpeedWork(section,runSetting){
+  const source=WILLER_2024_TABULATED_SPEED_WORK_SOURCE;
+  const grade=signedSectionGrade(section);
+  if(!(runSetting===source.runSetting&&Math.abs(grade??Infinity)<=1e-9&&Number.isFinite(section.speedMps)&&Number.isFinite(section.cadenceSpm)))return false;
+  const speed=section.speedMps;
+  if(speed<source.speedMps[0]||speed>source.speedMps.at(-1))return false;
+  const xs=source.speedMps,ys=source.sourceCadenceSpm;
+  let expected=null;
+  for(let index=0;index<xs.length-1;index+=1){if(speed>=xs[index]&&speed<=xs[index+1]){const t=(speed-xs[index])/(xs[index+1]-xs[index]);expected=ys[index]+(ys[index+1]-ys[index])*t;break;}}
+  if(expected==null&&Math.abs(speed-xs.at(-1))<=1e-12)expected=ys.at(-1);
+  return expected!=null&&Math.abs(section.cadenceSpm-expected)<=expected*source.cadenceToleranceFraction;
 }
 function sectionPassesA3FigureSpeed(section,runSetting){
   const grade=signedSectionGrade(section);
@@ -184,11 +196,21 @@ export function deriveRegionalEngineState(bundle){
     sourceIds:["RCM-ANCH-A3-016..030"],
     parameterIds:["RCM-P-GLOBAL-CADREF"],
   });
+  const willerSpeedSections=sections.filter(section=>sectionPassesWillerSpeedWork(section,runSetting));
+  routes.push({
+    routeId:"A5_WILLER_2024_TABULATED_SPEED_WORK",
+    state:willerSpeedSections.length===sections.length&&sections.length?"ACTIVE":willerSpeedSections.length?"PARTIAL":"INACTIVE",
+    regionIds:["BA-DISP-014","BA-DISP-016","BA-DISP-018","BA-DISP-023"],
+    metGates:willerSpeedSections.length?["level instrumented-treadmill source family","2.78–5.00 m/s","source-compatible natural cadence ±5%","Table 2 numeric work values"]:[],
+    unmetGates:willerSpeedSections.length===sections.length&&sections.length?[]:["one or more section-level source gates unmet"],
+    sourceIds:["SRC-A5-001"],
+    parameterIds:[],
+  });
   const a3FigureSpeedSections=sections.filter(section=>sectionPassesA3FigureSpeed(section,runSetting));
   routes.push({
     routeId:"A3_E02_FIGURE_DIGITIZED_SPEED",
     state:a3FigureSpeedSections.length===sections.length&&sections.length?"ACTIVE":a3FigureSpeedSections.length?"PARTIAL":"INACTIVE",
-    regionIds:["BA-DISP-015","BA-DISP-016","BA-DISP-023"],
+    regionIds:["BA-DISP-015","BA-DISP-023"],
     metGates:a3FigureSpeedSections.length?["treadmill setting","level grade","2–5 m/s","source-compatible natural cadence ±5%","figure-digitized low-confidence proxy"]:[],
     unmetGates:a3FigureSpeedSections.length===sections.length&&sections.length?[]:["one or more section-level source gates unmet"],
     sourceIds:["RCM-ANCH-A3-034..043"],
@@ -198,7 +220,7 @@ export function deriveRegionalEngineState(bundle){
   routes.push({
     routeId:"BAT_SRC_009_GRADE_EXACT",
     state:bat009Sections.length===sections.length&&sections.length?"ACTIVE":bat009Sections.length?"PARTIAL":"INACTIVE",
-    regionIds:["BA-DISP-015","BA-DISP-016","BA-DISP-023"],
+    regionIds:["BA-DISP-015"],
     metGates:bat009Sections.length?["4.17 m/s compatible speed","0–7% uphill grade"]:[],
     unmetGates:bat009Sections.length===sections.length&&sections.length?[]:["one or more section-level source gates unmet"],
     sourceIds:["RCM-ANCH-A1-040..042","RCM-ANCH-A1-057..059","RCM-ANCH-A3-031..033"],
@@ -208,7 +230,7 @@ export function deriveRegionalEngineState(bundle){
   routes.push({
     routeId:"BAT_SRC_019_GRADE_SPEED_PROFILE",
     state:gradeSpeedSections.length===sections.length&&sections.length?"ACTIVE":gradeSpeedSections.length?"PARTIAL":"INACTIVE",
-    regionIds:["BA-DISP-015","BA-DISP-016","BA-DISP-023"],
+    regionIds:["BA-DISP-015"],
     metGates:gradeSpeedSections.length?["source grade range","paired source-compatible speed ±0.15 m/s"]:[],
     unmetGates:gradeSpeedSections.length===sections.length&&sections.length?[]:["one or more section-level source gates unmet"],
     sourceIds:["RCM-ANCH-A1-060..094"],
