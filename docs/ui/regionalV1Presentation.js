@@ -1,6 +1,7 @@
 import { REGIONS } from "../core/model/regionalV1/engine/data.js";
 import { bodyRegionDisplayName, bodyRegionFamiliarName, bodyRegionFormalName } from "./bodyRegionTerminology.js";
 import {
+  regionalV1ConditionSupportMeta,
   regionalV1CoverageMeta,
   regionalV1ExposureMeta,
 } from "../core/model/regionalV1/regionalV1ResultService.js";
@@ -31,7 +32,9 @@ const VIEWS = [
 ];
 
 function finite(value) { return value !== null && value !== "" && Number.isFinite(Number(value)); }
-function stateLabel(state) {
+function stateLabel(rowOrState) {
+  if (rowOrState && typeof rowOrState === "object" && regionalV1ConditionSupportMeta(rowOrState).status === "EXPOSURE_ONLY_CONDITION_UNSUPPORTED") return "走行量のみで表示";
+  const state = typeof rowOrState === "object" ? rowOrState?.calculationState : rowOrState;
   return {
     CALCULATED: "表示あり",
     PARTIAL: "一部の条件で表示",
@@ -49,8 +52,12 @@ function directionSymbol(row) {
   return { above: "↑", below: "↓", reference: "=", unavailable: "—" }[directionState(row)];
 }
 function direction(row) {
-  if (!finite(row?.displayIndex)) return stateLabel(row?.calculationState);
+  if (!finite(row?.displayIndex)) return stateLabel(row);
   const delta = Number(row.displayDeltaPoints);
+  if (regionalV1ConditionSupportMeta(row).status === "EXPOSURE_ONLY_CONDITION_UNSUPPORTED") {
+    if (delta === 0) return "走行量のみの表示（走行条件の効果は未推定）";
+    return `走行量に基づき基準から${delta > 0 ? "+" : ""}${delta}ポイント（走行条件の効果は未推定）`;
+  }
   if (delta === 0) return "表示上の基準100と同じ";
   return `表示上の基準から${delta > 0 ? "+" : ""}${delta}ポイント`;
 }
@@ -59,7 +66,8 @@ function semanticChips(row) {
   const coverage = regionalV1CoverageMeta(row);
   const chips = [];
   if (exposure.fallback) chips.push("一部の情報で表示");
-  if (coverage.state === "PARTIAL") chips.push("一部の条件で表示");
+  if (regionalV1ConditionSupportMeta(row).status === "EXPOSURE_ONLY_CONDITION_UNSUPPORTED") chips.push("走行条件の効果は未推定");
+  else if (coverage.state === "PARTIAL") chips.push("一部の条件で表示");
   return chips;
 }
 function renderMap(recordId, rows) {
@@ -87,7 +95,8 @@ function renderPreviousComparison(comparison, enabled) {
       : Math.abs(exact) < 1
         ? `${symbol} 1%未満`
         : `${symbol} ${exact > 0 ? "+" : ""}${comparison.percentChangeRounded}%`;
-    return `<span class="regional-result-row__previous" data-previous-comparison="comparable"><strong>前回比較 ${escapeHtml(change)}</strong><small>${escapeHtml(formatComparisonDate(comparison.previous?.date))}・同じ意味で比較できる記録</small></span>`;
+    const exposureOnly = comparison.conditionSupportStatus === "EXPOSURE_ONLY_CONDITION_UNSUPPORTED";
+    return `<span class="regional-result-row__previous" data-previous-comparison="comparable"><strong>${exposureOnly ? "走行量のみの前回比較" : "前回比較"} ${escapeHtml(change)}</strong><small>${escapeHtml(formatComparisonDate(comparison.previous?.date))}・${exposureOnly ? "走行条件の効果は未推定" : "同じ意味で比較できる記録"}</small></span>`;
   }
   if (comparison?.status === "NO_COMPARABLE_RECORD") {
     return '<span class="regional-result-row__previous" data-previous-comparison="not-comparable"><strong>前回比較なし</strong><small>同じ意味で比べられる過去記録がないため割合表示なし</small></span>';
@@ -112,7 +121,7 @@ function renderList(recordId, rows, previousComparisons = {}, showPreviousCompar
       : "";
     const formalName = bodyRegionFormalName(row.regionId, row.regionName);
     const familiarName = bodyRegionFamiliarName(row.regionId, row.regionName);
-    return `<li class="regional-result-card" data-direction="${directionState(row)}"><a href="#/body-part-detail?recordId=${encodeURIComponent(recordId)}&regionId=${encodeURIComponent(row.regionId)}" aria-label="${escapeHtml(`${formalName}の詳細を開く`)}"><span class="regional-result-row__name"><strong>${escapeHtml(formalName)}</strong>${familiarName && familiarName !== formalName ? `<small class="body-region-familiar">${escapeHtml(familiarName)}</small>` : ""}</span><span class="regional-result-row__value">${value}</span>${meter}<span class="regional-result-row__direction">${escapeHtml(direction(row))}</span>${renderPreviousComparison(previousComparisons[row.regionId], showPreviousComparison)}<span class="regional-result-row__chips"><small>${escapeHtml(stateLabel(row.calculationState))}</small>${semanticChips(row).map((chip) => `<small>${escapeHtml(chip)}</small>`).join("")}</span></a></li>`;
+    return `<li class="regional-result-card" data-direction="${directionState(row)}"><a href="#/body-part-detail?recordId=${encodeURIComponent(recordId)}&regionId=${encodeURIComponent(row.regionId)}" aria-label="${escapeHtml(`${formalName}の詳細を開く`)}"><span class="regional-result-row__name"><strong>${escapeHtml(formalName)}</strong>${familiarName && familiarName !== formalName ? `<small class="body-region-familiar">${escapeHtml(familiarName)}</small>` : ""}</span><span class="regional-result-row__value">${value}</span>${meter}<span class="regional-result-row__direction">${escapeHtml(direction(row))}</span>${renderPreviousComparison(previousComparisons[row.regionId], showPreviousComparison)}<span class="regional-result-row__chips"><small>${escapeHtml(stateLabel(row))}</small>${semanticChips(row).map((chip) => `<small>${escapeHtml(chip)}</small>`).join("")}</span></a></li>`;
   }).join("")}</ul>`;
 }
 function focusRows(rows, limit = 4) {
@@ -176,9 +185,10 @@ export function renderRegionalV1Card({ resultRecord, previousComparisons = {}, i
     <div class="result-card__heading"><div><p>各部位の基準100との比較</p><h2 id="distribution-title">部位ごとの負荷傾向指数</h2></div>${renderStatusLabel("部位ごとの表示", "model")}</div>
     <p class="inline-helper"><strong>100は安全値・正常値・平均値ではありません。</strong> 12部位それぞれについて、その部位固有の表示上の基準からの増減を表示します。</p>
     ${renderRecoveryNotice(resultRecord)}
+    ${rows.some((row) => regionalV1ConditionSupportMeta(row).status === "EXPOSURE_ONLY_CONDITION_UNSUPPORTED") ? '<p class="inline-helper"><strong>「走行量のみで表示」では、今回の走行条件の効果を数値化していません。</strong> 坂・速度・路面などの条件が基準と同じという意味ではありません。</p>' : ""}
     <div class="regional-v1-view-toggle" role="group" aria-label="表示する部位"><button type="button" data-regional-v1-view-button="focus" aria-pressed="${resolvedView === "focus"}">基準との差がある部位</button><button type="button" data-regional-v1-view-button="all" aria-pressed="${resolvedView === "all"}">全12部位</button></div>
     <p class="muted-text">「基準との差がある部位」は、各部位自身の基準100との差が大きい順に最大4部位を表示します。危険度や部位間の負荷順位ではありません。</p>
-    <ul class="regional-direction-legend" aria-label="身体図の色と記号"><li data-direction="above"><span aria-hidden="true">↑</span>基準より上</li><li data-direction="reference"><span aria-hidden="true">=</span>基準と同じ</li><li data-direction="below"><span aria-hidden="true">↓</span>基準より下</li><li data-direction="unavailable"><span aria-hidden="true">—</span>表示なし</li></ul>
+    <ul class="regional-direction-legend" aria-label="身体図の色と記号"><li data-direction="above"><span aria-hidden="true">↑</span>基準より上</li><li data-direction="reference"><span aria-hidden="true">=</span>数値上は基準100</li><li data-direction="below"><span aria-hidden="true">↓</span>基準より下</li><li data-direction="unavailable"><span aria-hidden="true">—</span>表示なし</li></ul>
     <div class="regional-v1-overview">
       <div class="regional-v1-overview__map">${renderMap(resultRecord.record_id, rows)}<p class="muted-text">色は各部位自身の基準100に対する方向を示します。部位間の負荷順位や危険度ではありません。部位を選ぶと詳細を開けます。</p></div>
       <div class="regional-v1-overview__feedback">

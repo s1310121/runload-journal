@@ -158,14 +158,18 @@ export function buildRegionalConditionExplanation(row = {}) {
     })];
   });
 
+  const exposureOnlyConditionUnsupported = (Array.isArray(row.reasonTrace) ? row.reasonTrace : []).some((event) => event?.traceCode === "EXPOSURE_ONLY_ALL_SECTIONS_CONDITION_UNSUPPORTED");
   return Object.freeze({
     version: HIERARCHICAL_EXPLANATION_VERSION,
     conditions: Object.freeze(conditions),
     hasAppliedConditionChange: nonReferenceConditionEvents.length > 0,
     hasExposure: conditions.some((item) => item.key === "amount"),
-    statement: nonReferenceConditionEvents.length
-      ? "ここでは、今回の記録と関連する一般的な知見を示しています。"
-      : "今回の記録では、走行量を中心に振り返ります。関連する一般的な知見を示しています。",
+    conditionSupportStatus: exposureOnlyConditionUnsupported ? "EXPOSURE_ONLY_CONDITION_UNSUPPORTED" : nonReferenceConditionEvents.length ? "CONDITION_EFFECT_APPLIED" : "NO_NONREFERENCE_CONDITION_EFFECT",
+    statement: exposureOnlyConditionUnsupported
+      ? "今回の走行条件に対応する数値効果は推定していません。走行量を中心に振り返り、関連する一般的な知見を示しています。"
+      : nonReferenceConditionEvents.length
+        ? "ここでは、今回の記録と関連する一般的な知見を示しています。"
+        : "今回の記録では、走行量を中心に振り返ります。関連する一般的な知見を示しています。",
   });
 }
 

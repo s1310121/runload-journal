@@ -1,6 +1,6 @@
 // Generated from locked Authority artifacts. Do not edit by hand.
-export const AUTHORITY_VERSION = "RunLoad Regional Calculation Model Authority V1.1 Amendment A5";
-export const PARAMETER_SET_VERSION = "RCM-V1.1-A5";
+export const AUTHORITY_VERSION = "RunLoad Regional Calculation Model Authority V1.1 Amendment A6 Candidate";
+export const PARAMETER_SET_VERSION = "RCM-V1.1-A6-CANDIDATE";
 export const ADAPTER_VERSION = "RunLoad Input Preset Mapping V1.0";
 export const REGIONS = Object.freeze([
   {
@@ -1475,8 +1475,12 @@ export const PFA_CURVE = Object.freeze({
 export const GASTRO_GRADE_CURVE = Object.freeze([[0, 1.0], [2, 1.0009], [7, 0.9584]]);
 export const GLUTE_GRADE_CURVE = Object.freeze([[0, 1.0], [2, 1.4142], [7, 1.8327]]);
 
-// BAT-SRC-019 source-matched grade×speed profiles. Ratios are normalized to the
-// source level condition and require the paired mean speed for each grade.
+// BAT-SRC-019 descriptive group-mean grade×speed data. Ratios are normalized
+// to the source level condition and are retained for provenance/reproduction
+// only in R21. The published speeds are group means from participant-specific
+// speed prescriptions, not common protocol targets or individual eligibility
+// tolerances. The app cannot reconstruct the source participant-specific 10-km
+// performance prescription, so this profile is not numeric-runtime eligible.
 export const GRADE_SPEED_PROFILE = Object.freeze({
   gradePercent: [-15, -10, -5, 0, 5, 10, 15],
   speedMps: [3.75, 3.583333333333, 3.416666666667, 3.055555555556, 2.277777777778, 1.805555555556, 1.5],
@@ -1489,8 +1493,12 @@ export const GRADE_SPEED_PROFILE = Object.freeze({
   "BA-DISP-023": [1.261728395062, 1.093827160494, 1.00987654321, 1, 1.259259259259, 1.333333333333, 1.234567901235]
 });
 
-// BAT-SRC-027 exact uneven/even endpoints at unevenness level 5. Intermediate
-// ordinal levels are an explicit bounded project mapping in log space.
+// BAT-SRC-027 source-reported uneven/even endpoint ratios at the study's
+// single artificial uneven-treadmill condition (2.3 m/s; height variation up
+// to about 2.5 cm). R20 retains these values for provenance only. The app's
+// ordinal unevennessLevel 1-5 scale is NOT a source scale, and these endpoints
+// are not numeric-runtime eligible without an exact representation of the
+// source apparatus/protocol.
 export const UNEVENNESS_UPPER_BOUND_CURVES = Object.freeze({
   "BA-DISP-016": 1.07,
   "BA-DISP-018": 1.19,

@@ -1,6 +1,9 @@
 import { REGIONS as REGIONAL_V1_REGIONS } from "../core/model/regionalV1/engine/data.js";
 import { BODY_AREA_TO_REGIONAL_V1 } from "../core/model/regionalV1/regionalV1InputAdapter.js";
-import { buildRegionalV1HistoryComparison } from "../core/model/regionalV1/regionalV1ResultService.js";
+import {
+  buildRegionalV1HistoryComparison,
+  regionalV1ConditionSupportMeta,
+} from "../core/model/regionalV1/regionalV1ResultService.js";
 import {
   V27_REGIONAL_VIEW_IDS,
   V27_REGIONS,
@@ -294,7 +297,9 @@ function finiteV1(value) {
   return value !== null && value !== "" && Number.isFinite(Number(value));
 }
 
-function stateLabelV1(value) {
+function stateLabelV1(rowOrState) {
+  if (rowOrState && typeof rowOrState === "object" && regionalV1ConditionSupportMeta(rowOrState).status === "EXPOSURE_ONLY_CONDITION_UNSUPPORTED") return "走行量のみで表示";
+  const value = typeof rowOrState === "object" ? rowOrState?.calculationState : rowOrState;
   return ({
     CALCULATED: "表示あり",
     PARTIAL: "一部の条件で表示",
@@ -324,10 +329,11 @@ function renderHistoryComparisonV1(comparison) {
   }
   return `<div class="regional-history-comparison-list">${comparison.rows.map((item) => {
     const status = item.compatibility.status;
+    const exposureOnly = item.conditionSupportStatus === "EXPOSURE_ONLY_CONDITION_UNSUPPORTED";
     const delta = finiteV1(item.directDelta)
-      ? `今回との差 ${Number(item.directDelta) > 0 ? "+" : ""}${Number(item.directDelta)}ポイント`
+      ? `${exposureOnly ? "走行量のみの表示差" : "今回との差"} ${Number(item.directDelta) > 0 ? "+" : ""}${Number(item.directDelta)}ポイント`
       : "条件が異なるため、数値差は表示しません";
-    return `<article class="regional-history-comparison-row" data-comparison-status="${escapeHtml(status)}"><div><time datetime="${escapeHtml(item.date)}">${escapeHtml(formatLocalDate(item.date))}</time><strong>${item.value == null ? "数値なし" : escapeHtml(String(item.value))}</strong><small>${escapeHtml(stateLabelV1(item.calculationState))}</small></div><div>${renderStatusLabel(comparisonLabelV1(status), status === "DIRECT_COMPARABLE" ? "model" : "neutral")}<p>${escapeHtml(delta)}</p><small>${status === "DIRECT_COMPARABLE" ? "同じ部位・同じ基準など、同じ意味で比べられる記録です。良し悪しや改善・悪化は判定しません。" : "部位または基準の意味が異なるため、数値差は比べません。"}</small></div><a class="button button--text" href="#/result?recordId=${encodeURIComponent(item.recordId)}">記録を開く</a></article>`;
+    return `<article class="regional-history-comparison-row" data-comparison-status="${escapeHtml(status)}"><div><time datetime="${escapeHtml(item.date)}">${escapeHtml(formatLocalDate(item.date))}</time><strong>${item.value == null ? "数値なし" : escapeHtml(String(item.value))}</strong><small>${escapeHtml(stateLabelV1({ calculationState: item.calculationState, reasonTrace: exposureOnly ? [{ traceCode: "EXPOSURE_ONLY_ALL_SECTIONS_CONDITION_UNSUPPORTED" }] : [] }))}</small></div><div>${renderStatusLabel(comparisonLabelV1(status), status === "DIRECT_COMPARABLE" ? "model" : "neutral")}<p>${escapeHtml(delta)}</p><small>${status === "DIRECT_COMPARABLE" ? (exposureOnly ? "走行条件の効果は未推定のまま、同じ曝露basisで走行量に基づく表示差だけを示します。" : "同じ部位・同じ基準など、同じ意味で比べられる記録です。良し悪しや改善・悪化は判定しません。") : "部位または基準の意味が異なるため、数値差は比べません。"}</small></div><a class="button button--text" href="#/result?recordId=${encodeURIComponent(item.recordId)}">記録を開く</a></article>`;
   }).join("")}</div><p class="source-boundary">比較できる場合も、数値差は本人の記録間の相対差です。身体状態の改善・悪化、傷害の可能性、安全性を意味しません。</p>`;
 }
 
@@ -349,6 +355,8 @@ function renderRegionalV1Detail({ experience, regionId, experiences }) {
   const delta = finiteV1(row.displayDeltaPoints)
     ? `${row.displayDeltaPoints > 0 ? "+" : ""}${row.displayDeltaPoints}ポイント`
     : "—";
+  const conditionSupport = regionalV1ConditionSupportMeta(row);
+  const exposureOnly = conditionSupport.status === "EXPOSURE_ONLY_CONDITION_UNSUPPORTED";
   const observations = subjectiveV1(experience.feedback || {}, regionId);
   const conditionExplanation = buildRegionalConditionExplanation(row);
   const historyComparison = buildRegionalV1HistoryComparison({
@@ -364,7 +372,7 @@ function renderRegionalV1Detail({ experience, regionId, experiences }) {
       description: `${formatLocalDate(experience.record.date)}の、この部位の基準100との比較です。`,
     })}
     ${renderResultWorkspaceNavigation({ recordId: experience.record.id, date: experience.record.date, regionId, active: "region" })}
-    <section class="result-card" data-information-role="model"><div class="result-card__heading"><div><p>今回の部位結果</p><h2>部位ごとの負荷傾向指数</h2></div>${renderStatusLabel(stateLabelV1(row.calculationState), row.calculationState === "CALCULATED" ? "model" : "neutral")}</div>${finiteV1(row.displayIndex) ? `<div class="body-part-detail__primary-value"><strong>${row.displayIndex}</strong><div><span>この部位の基準100から${delta}</span></div></div>` : "<p>この記録では部位の比較値を表示できません。</p>"}<p class="inline-helper"><strong>この表示が表すこと：</strong>${escapeHtml(bodyRegionPlainMeaning(regionId))}です。</p><p class="inline-helper"><strong>基準100は安全値・正常値・初心者平均ではありません。</strong> この部位の変化を見返すための表示上の基準です。</p><p class="source-boundary">この値は先行研究を参考にした相対表示で、個人の身体を測った値ではありません。部位ごとに意味が異なるため、数値の大きさで部位間を順位づけできません。</p></section>
+    <section class="result-card" data-information-role="model"><div class="result-card__heading"><div><p>今回の部位結果</p><h2>部位ごとの負荷傾向指数</h2></div>${renderStatusLabel(stateLabelV1(row), row.calculationState === "CALCULATED" ? "model" : "neutral")}</div>${finiteV1(row.displayIndex) ? `<div class="body-part-detail__primary-value"><strong>${row.displayIndex}</strong><div><span>${exposureOnly ? "走行量に基づく表示上の基準100から" : "この部位の基準100から"}${delta}</span></div></div>` : "<p>この記録では部位の比較値を表示できません。</p>"}${exposureOnly ? '<p class="inline-helper"><strong>今回の走行条件の効果は数値化していません。</strong> この値は走行量に基づく一部表示で、坂・速度・路面などの条件が基準と同じという意味ではありません。</p>' : ""}<p class="inline-helper"><strong>この表示が表すこと：</strong>${escapeHtml(bodyRegionPlainMeaning(regionId))}です。</p><p class="inline-helper"><strong>基準100は安全値・正常値・初心者平均ではありません。</strong> この部位の変化を見返すための表示上の基準です。</p><p class="source-boundary">この値は先行研究を参考にした相対表示で、個人の身体を測った値ではありません。部位ごとに意味が異なるため、数値の大きさで部位間を順位づけできません。</p></section>
     <section class="result-card" data-information-role="condition" data-regional-semantic-summary data-hierarchical-explanation="${escapeHtml(conditionExplanation.version || "current")}"><div class="result-card__heading"><div><p>今回の結果を理解する</p><h2>今回の記録と関連する知見</h2></div></div>${renderUserConditionExplanationV1(conditionExplanation, experience.record.id, regionId)}<details class="regional-result-reading-details"><summary>この値の読み方を確認</summary><div><ul class="body-part-evidence-list"><li>100との差は、この部位自身の表示上の基準との差です。</li><li>数値の高低は、良し悪し、危険度、走行の可否を示しません。</li><li>本人の身体記録は、この数値とは別に確認します。</li></ul></div></details></section>
     <section id="regional-v1-history-comparison" class="result-card" data-information-role="fact" data-regional-history-comparison><div class="result-card__heading"><div><p>過去記録との比較</p><h2>同じ部位の過去記録</h2></div>${renderStatusLabel(`比較できる記録 ${historyComparison.counts.direct}件`, "info")}</div><p class="inline-helper">同じ部位・同じ基準など、同じ意味で比べられる記録だけ今回との差を表示します。</p>${renderHistoryComparisonV1(historyComparison)}</section>
     <section class="result-card" data-information-role="personal"><div class="result-card__heading"><div><p>本人の記録</p><h2>本人が入力した身体記録</h2></div>${renderStatusLabel("本人の記録", "info")}</div>${observations.length ? `<div class="subjective-entry-list">${observations.map((observation) => `<article><h3>${escapeHtml(observation.label || "記録した部位")}</h3><p>${escapeHtml(bodyAreaLateralityLabel(observation.laterality))}・程度 ${Number(observation.intensity || 0)}/5${observation.noticedTiming ? `・${escapeHtml(observation.noticedTiming)}` : ""}</p></article>`).join("")}</div>` : '<p class="muted-text">この部位に対応する本人の身体記録はありません。</p>'}<p class="source-boundary">本人の身体記録と部位の指数は別の情報です。両者を組み合わせて原因、危険度、走行の可否を判定しません。</p></section>

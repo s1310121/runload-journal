@@ -2,8 +2,9 @@ import { AUTHORITY_VERSION, PARAMETER_SET_VERSION, ADAPTER_VERSION, REGIONS } fr
 import { isStandardShoeCandidate } from "./presets.js";
 import { failure, success } from "./utils.js";
 import { validateFormalInputBundle } from "./adapter.js";
-import { JOINT_GRADE_SOURCE, CADENCE_JOINT_WORK_SOURCE, FIGURE_DIGITIZED_SPEED_SOURCE, WILLER_2024_TABULATED_SPEED_WORK_SOURCE } from "./a3-sources.js";
+import { JOINT_GRADE_SOURCE, CADENCE_JOINT_WORK_SOURCE, FIGURE_DIGITIZED_SPEED_SOURCE, WILLER_2024_TABULATED_SPEED_WORK_SOURCE, A6_BEGINNER_GRADE_TRANSFER_POLICY } from "./a3-sources.js";
 import { HORIGUCHI_PLANTAR_PEAK_PRESSURE_SOURCE } from "./a4-sources.js";
+import { HO_2010_HEEL_PEAK_PRESSURE_SOURCE } from "./a6-r2-sources.js";
 
 const value=(bundle,id)=>bundle.formalInputs[id]?.status==="KNOWN"?bundle.formalInputs[id].value:null;
 const SOURCE_SURFACES=new Set(["Asphalt","Concrete","Grass","Rubber"]);
@@ -29,15 +30,50 @@ function profileSpeedAtGrade(grade){
   return null;
 }
 function sectionPassesGradeSpeedProfile(section){
-  const expected=profileSpeedAtGrade(signedSectionGrade(section));
-  return expected!=null&&Number.isFinite(section.speedMps)&&Math.abs(section.speedMps-expected)<=0.15;
+  // R21: BAT-SRC-019 group-mean speeds are descriptive outputs of a
+  // participant-specific 10-km-performance prescription, not fixed eligibility
+  // knots. The app cannot reproduce that source prescription; numeric route off.
+  void section;
+  return false;
 }
+
 function sectionPassesA3JointGrade(section,runSetting){
   const grade=signedSectionGrade(section);
   return runSetting===JOINT_GRADE_SOURCE.runSetting
-    &&Number.isFinite(grade)&&Math.abs(grade)>1e-9&&Math.abs(grade)<=10.01
+    &&Number.isFinite(grade)&&Math.abs(grade)>1e-9&&grade>=JOINT_GRADE_SOURCE.gradePercent[0]-1e-12&&grade<=JOINT_GRADE_SOURCE.gradePercent.at(-1)+1e-12
     &&Number.isFinite(section.speedMps)
-    &&Math.abs(section.speedMps-JOINT_GRADE_SOURCE.speedMps)<=JOINT_GRADE_SOURCE.speedMps*JOINT_GRADE_SOURCE.speedToleranceFraction+1e-12;
+    &&Math.abs(section.speedMps-JOINT_GRADE_SOURCE.speedMps)<=JOINT_GRADE_SOURCE.speedMatchEpsilonMps;
+}
+function sectionPassesA6StableSurface(section,runSetting){
+  const policy=A6_BEGINNER_GRADE_TRANSFER_POLICY;
+  if(!policy.allowedRunSettings.includes(runSetting))return false;
+  if(runSetting==="TREADMILL")return true;
+  const components=(section.surfaceComponents??[]).filter(component=>Number(component.sharePercent??0)>0);
+  if(!components.length)return false;
+  const req=policy.stableOutdoorRequirements;
+  return components.every(component=>{
+    const profile=component.propertyProfile??{};
+    return Number.isFinite(Number(profile.unevennessLevel))&&Number(profile.unevennessLevel)<=req.maxUnevennessLevel
+      &&Number.isFinite(Number(profile.sinkLevel))&&Number(profile.sinkLevel)<=req.maxSinkLevel
+      &&Number.isFinite(Number(profile.stabilityLevel))&&Number(profile.stabilityLevel)>=req.minStabilityLevel;
+  });
+}
+function sectionPassesA6GradeTransfer(section,runSetting){
+  const grade=signedSectionGrade(section),policy=A6_BEGINNER_GRADE_TRANSFER_POLICY;
+  return Number.isFinite(grade)&&Math.abs(grade)>1e-9&&Math.abs(grade)<=10.01
+    &&Number.isFinite(section.speedMps)&&section.speedMps>=policy.speedDomainMps[0]&&section.speedMps<=policy.speedDomainMps[1]
+    &&sectionPassesA6StableSurface(section,runSetting);
+}
+function sectionPassesA6LocalGradeSpeedEnvelope(section,runSetting){
+  const grade=signedSectionGrade(section),speed=section.speedMps;
+  if(!Number.isFinite(grade)||Math.abs(grade)<=1e-9||!Number.isFinite(speed)||!sectionPassesA6StableSurface(section,runSetting))return false;
+  for(let index=0;index<PROFILE_GRADES.length-1;index+=1){
+    if(grade>=PROFILE_GRADES[index]&&grade<=PROFILE_GRADES[index+1]){
+      const vmin=Math.min(PROFILE_SPEEDS[index],PROFILE_SPEEDS[index+1]),vmax=Math.max(PROFILE_SPEEDS[index],PROFILE_SPEEDS[index+1]);
+      return speed>=vmin&&speed<=vmax;
+    }
+  }
+  return false;
 }
 function sectionPassesA3Cadence(section,runSetting){
   const grade=signedSectionGrade(section);
@@ -53,25 +89,13 @@ function sectionPassesA3Cadence(section,runSetting){
 function sectionPassesWillerSpeedWork(section,runSetting){
   const source=WILLER_2024_TABULATED_SPEED_WORK_SOURCE;
   const grade=signedSectionGrade(section);
-  if(!(runSetting===source.runSetting&&Math.abs(grade??Infinity)<=1e-9&&Number.isFinite(section.speedMps)&&Number.isFinite(section.cadenceSpm)))return false;
-  const speed=section.speedMps;
-  if(speed<source.speedMps[0]||speed>source.speedMps.at(-1))return false;
-  const xs=source.speedMps,ys=source.sourceCadenceSpm;
-  let expected=null;
-  for(let index=0;index<xs.length-1;index+=1){if(speed>=xs[index]&&speed<=xs[index+1]){const t=(speed-xs[index])/(xs[index+1]-xs[index]);expected=ys[index]+(ys[index+1]-ys[index])*t;break;}}
-  if(expected==null&&Math.abs(speed-xs.at(-1))<=1e-12)expected=ys.at(-1);
-  return expected!=null&&Math.abs(section.cadenceSpm-expected)<=expected*source.cadenceToleranceFraction;
+  if(!(runSetting===source.runSetting&&Math.abs(grade??Infinity)<=1e-9&&Number.isFinite(section.speedMps)))return false;
+  return section.speedMps>=source.speedMps[0]&&section.speedMps<=source.speedMps.at(-1);
 }
 function sectionPassesA3FigureSpeed(section,runSetting){
   const grade=signedSectionGrade(section);
-  if(!(runSetting===FIGURE_DIGITIZED_SPEED_SOURCE.runSetting&&Math.abs(grade??Infinity)<=1e-9&&Number.isFinite(section.speedMps)&&Number.isFinite(section.cadenceSpm)))return false;
-  const speed=section.speedMps;
-  if(speed<FIGURE_DIGITIZED_SPEED_SOURCE.speedMps[0]||speed>FIGURE_DIGITIZED_SPEED_SOURCE.speedMps.at(-1))return false;
-  const xs=FIGURE_DIGITIZED_SPEED_SOURCE.speedMps, ys=FIGURE_DIGITIZED_SPEED_SOURCE.sourceCadenceSpm;
-  let expected=null;
-  for(let index=0;index<xs.length-1;index+=1){if(speed>=xs[index]&&speed<=xs[index+1]){const t=(speed-xs[index])/(xs[index+1]-xs[index]);expected=ys[index]+(ys[index+1]-ys[index])*t;break;}}
-  if(expected==null&&Math.abs(speed-xs.at(-1))<=1e-12)expected=ys.at(-1);
-  return expected!=null&&Math.abs(section.cadenceSpm-expected)<=expected*FIGURE_DIGITIZED_SPEED_SOURCE.cadenceToleranceFraction;
+  if(!(runSetting===FIGURE_DIGITIZED_SPEED_SOURCE.runSetting&&Math.abs(grade??Infinity)<=1e-9&&Number.isFinite(section.speedMps)))return false;
+  return section.speedMps>=FIGURE_DIGITIZED_SPEED_SOURCE.speedMps[0]&&section.speedMps<=FIGURE_DIGITIZED_SPEED_SOURCE.speedMps.at(-1);
 }
 function sectionPassesA4Horiguchi(section,runSetting,strike,shoeType,softness){
   const source=HORIGUCHI_PLANTAR_PEAK_PRESSURE_SOURCE;
@@ -81,15 +105,30 @@ function sectionPassesA4Horiguchi(section,runSetting,strike,shoeType,softness){
   return continuous
     &&runSetting===source.runSetting
     &&Number.isFinite(section.speedMps)
-    &&Math.abs(section.speedMps-source.speedMps)<=source.speedMps*source.speedToleranceFraction+1e-12
+    &&Math.abs(section.speedMps-source.speedMps)<=source.speedMatchEpsilonMps
     &&Number.isFinite(degrees)&&degrees>=source.gradeDegrees[0]-1e-12&&degrees<=source.gradeDegrees.at(-1)+1e-12
     &&source.validFootPlacements.includes(strike)
     &&shoeType===source.requiredShoeType&&softness===source.requiredShoeSoftness;
 }
 
-function sectionPassesBat009(section){
+function sectionPassesA6Ho2010Heel(section,runSetting){
+  const source=HO_2010_HEEL_PEAK_PRESSURE_SOURCE;
+  if(runSetting!==source.runSetting)return false;
+  if(!(section.runningFormat==="CONTINUOUS_RUN"||section.runningFormat==="RUN"))return false;
+  const grade=signedSectionGrade(section), speed=section.speedMps;
+  if(!Number.isFinite(grade)||!Number.isFinite(speed))return false;
+  if(Math.abs(grade-source.levelSpeedPath.fixedGradePercent)<=1e-12){
+    return speed>=source.levelSpeedPath.speedMps[0]-1e-12&&speed<=source.levelSpeedPath.speedMps.at(-1)+1e-12;
+  }
+  if(Math.abs(speed-source.fixedSpeedUphillPath.fixedSpeedMps)<=1e-12&&grade>=-1e-12){
+    return grade>=source.fixedSpeedUphillPath.gradePercent[0]-1e-12&&grade<=source.fixedSpeedUphillPath.gradePercent.at(-1)+1e-12;
+  }
+  return false;
+}
+
+function sectionPassesBat009(section,runSetting){
   const grade=signedSectionGrade(section);
-  return Number.isFinite(grade)&&grade>=0&&grade<=7&&Number.isFinite(section.speedMps)&&section.speedMps>=3.9615&&section.speedMps<=4.3785;
+  return runSetting==="TREADMILL"&&Number.isFinite(grade)&&grade>=0&&grade<=7&&Number.isFinite(section.speedMps)&&Math.abs(section.speedMps-4.17)<=1e-9;
 }
 function sectionUnevennessLevel(section){
   const components=section.surfaceComponents??[];
@@ -104,8 +143,11 @@ function sectionUnevennessLevel(section){
   return total>0?weighted/total:null;
 }
 function sectionPassesBoundedUnevenness(section){
-  const level=sectionUnevennessLevel(section);
-  return level>1&&Number.isFinite(section.speedMps)&&section.speedMps>=1.955&&section.speedMps<=2.645;
+  // R20: historical project transfer retired. BAT-SRC-027 has one artificial
+  // uneven treadmill condition at 2.3 m/s; this app has no exact apparatus
+  // category, so no section is numeric-eligible for this route.
+  void section;
+  return false;
 }
 function supportedSurfaceShare(section,categories=SOURCE_SURFACES){
   return (section.surfaceComponents??[]).reduce((sum,component)=>sum+(
@@ -149,9 +191,19 @@ export function deriveRegionalEngineState(bundle){
     routeId:"A4_HORIGUCHI_PLANTAR_PEAK_PRESSURE",
     state:a4HoriguchiSections.length===sections.length&&sections.length?"ACTIVE":a4HoriguchiSections.length?"PARTIAL":"INACTIVE",
     regionIds:["BA-DISP-027","BA-DISP-029"],
-    metGates:a4HoriguchiSections.length?["continuous treadmill running","3.33 m/s ±5%","-6 to +6 degrees","RFS or FFS self-report","training shoe with normal softness proxy"]:[],
+    metGates:a4HoriguchiSections.length?["continuous treadmill running","exact 3.33 m/s source speed","-6 to +6 degrees","RFS or FFS self-report","training shoe with normal softness proxy"]:[],
     unmetGates:a4HoriguchiSections.length===sections.length&&sections.length?[]:["all sections must share the same Horiguchi endpoint family and satisfy every source-protocol gate"],
     sourceIds:["RCM-ANCH-A4-001..011"],
+    parameterIds:[],
+  });
+  const a6Ho2010HeelSections=sections.filter(section=>sectionPassesA6Ho2010Heel(section,runSetting));
+  routes.push({
+    routeId:"A6_HO2010_HEEL_PEAK_PRESSURE",
+    state:a6Ho2010HeelSections.length===sections.length&&sections.length?"ACTIVE":a6Ho2010HeelSections.length?"PARTIAL":"INACTIVE",
+    regionIds:["BA-DISP-027"],
+    metGates:a6Ho2010HeelSections.length?["continuous treadmill jogging","union of Ho 2010 level-speed path or fixed-2.0-m/s uphill path","no rectangular speed x grade expansion"]:[],
+    unmetGates:a6Ho2010HeelSections.length===sections.length&&sections.length?[]:["all sections must stay on the same Ho 2010 heel peak-pressure endpoint family and on one of the two registered 1D protocol paths"],
+    sourceIds:["A6R2-HO2010-TABLE1-HEEL","A6R2-HO2010-TABLE3-HEEL"],
     parameterIds:[],
   });
   const exactSurfaceSections=sections.filter(section=>sectionPassesExactSurfaceGate(section,strike,shoeType,softness));
@@ -181,27 +233,64 @@ export function deriveRegionalEngineState(bundle){
     routeId:"A3_SRC_SUP_003_JOINT_GRADE",
     state:a3JointGradeSections.length===sections.length&&sections.length?"ACTIVE":a3JointGradeSections.length?"PARTIAL":"INACTIVE",
     regionIds:["BA-DISP-014","BA-DISP-016","BA-DISP-024"],
-    metGates:a3JointGradeSections.length?["treadmill setting","2.25 m/s ±5%","non-level grade within source knots"]:[],
+    metGates:a3JointGradeSections.length?["treadmill setting","2.25 m/s source speed","non-level grade within source knots"]:[],
     unmetGates:a3JointGradeSections.length===sections.length&&sections.length?[]:["one or more section-level source gates unmet"],
     sourceIds:["RCM-ANCH-A3-001..015"],
     parameterIds:[],
   });
-  const a3CadenceSections=sections.filter(section=>sectionPassesA3Cadence(section,runSetting));
+  const nonLevelSections=sections.filter(section=>{const grade=signedSectionGrade(section);return Number.isFinite(grade)&&Math.abs(grade)>1e-9;});
+  routes.push({
+    routeId:"A6_NUCKOLS_BOUNDED_GRADE_TRANSFER",
+    state:"UNAVAILABLE",
+    regionIds:["BA-DISP-014","BA-DISP-015","BA-DISP-016","BA-DISP-023","BA-DISP-024"],
+    metGates:[],
+    unmetGates:["R19 retired cross-speed/environment magnitude transfer; supporting studies do not calibrate Nuckols joint-power magnitude outside the 2.25 m/s treadmill protocol"],
+    sourceIds:["SRC-SUP-003","SRC-A6-001","SRC-A6-002","SRC-A6-003","SRC-A6-004","SRC-A6-005"],
+    parameterIds:[],
+  });
+  const nuckolsProxySections=nonLevelSections.filter(section=>sectionPassesA3JointGrade(section,runSetting));
+  routes.push({
+    routeId:"A6_NUCKOLS_SOURCE_PROTOCOL_PROXY",
+    state:nuckolsProxySections.length===sections.filter(section=>Math.abs(signedSectionGrade(section)??0)>1e-9).length&&nuckolsProxySections.length?"PARTIAL":"INACTIVE",
+    regionIds:["BA-DISP-015","BA-DISP-023"],
+    metGates:nuckolsProxySections.length?["treadmill setting","2.25 m/s source speed","non-level percent-grade within -10% to +10% source range"]:[],
+    unmetGates:nuckolsProxySections.length?[]:["source-protocol proxy requires 2.25 m/s treadmill running at a non-level grade within source range"],
+    sourceIds:["SRC-SUP-003"],
+    parameterIds:[],
+  });
+  routes.push({
+    routeId:"A6_BAT_SRC_019_LOCAL_GRADE_SPEED_ENVELOPE",
+    state:"UNAVAILABLE",
+    regionIds:["BA-DISP-015","BA-DISP-016","BA-DISP-018","BA-DISP-023"],
+    metGates:[],
+    unmetGates:["R15 retired the off-source local 2D grade-speed envelope; only the original paired BAT-SRC-019 path remains eligible"],
+    sourceIds:["RCM-ANCH-A1-060..094","SRC-A6-003","SRC-A6-004"],
+    parameterIds:[],
+  });
   routes.push({
     routeId:"A3_E04_GROUP_MEAN_CADENCE",
-    state:a3CadenceSections.length===sections.length&&sections.length?"ACTIVE":a3CadenceSections.length?"PARTIAL":"INACTIVE",
+    state:"UNAVAILABLE",
     regionIds:["BA-DISP-014","BA-DISP-016","BA-DISP-024"],
-    metGates:a3CadenceSections.length?["treadmill setting","level grade","2.4–3.4 m/s","155.34–189.86 spm group-mean source protocol"]:[],
-    unmetGates:a3CadenceSections.length===sections.length&&sections.length?[]:["one or more section-level source gates unmet"],
+    metGates:[],
+    unmetGates:["R17 retired absolute-cadence numeric mapping because Heiderscheit 2011 manipulated each runner's preferred step rate and the app lacks a source-compatible preferred baseline"],
     sourceIds:["RCM-ANCH-A3-016..030"],
-    parameterIds:["RCM-P-GLOBAL-CADREF"],
+    parameterIds:[],
+  });
+  routes.push({
+    routeId:"A6_HAGEN2023_BA019_LOW_SPEED_PUBLISHED_MODEL",
+    state:"UNAVAILABLE",
+    regionIds:["BA-DISP-019"],
+    metGates:[],
+    unmetGates:["R22 retired cross-study normalization of the Hagen 2023 habitual PFJS impulse-per-km regression into Current Reference 100: study-specific absolute scales are not calibrated and the app cannot establish the source participant-specific habitual/preferred cadence state"],
+    sourceIds:["SRC-A6-R6-001","BAT-SRC-010"],
+    parameterIds:[],
   });
   const willerSpeedSections=sections.filter(section=>sectionPassesWillerSpeedWork(section,runSetting));
   routes.push({
     routeId:"A5_WILLER_2024_TABULATED_SPEED_WORK",
     state:willerSpeedSections.length===sections.length&&sections.length?"ACTIVE":willerSpeedSections.length?"PARTIAL":"INACTIVE",
     regionIds:["BA-DISP-014","BA-DISP-016","BA-DISP-018","BA-DISP-023"],
-    metGates:willerSpeedSections.length?["level instrumented-treadmill source family","2.78–5.00 m/s","source-compatible natural cadence ±5%","Table 2 numeric work values"]:[],
+    metGates:willerSpeedSections.length?["level instrumented-treadmill source family","2.78–5.00 m/s","Table 2 numeric work values","Table 1 cadence retained as descriptive provenance only"]:[],
     unmetGates:willerSpeedSections.length===sections.length&&sections.length?[]:["one or more section-level source gates unmet"],
     sourceIds:["SRC-A5-001"],
     parameterIds:[],
@@ -211,17 +300,17 @@ export function deriveRegionalEngineState(bundle){
     routeId:"A3_E02_FIGURE_DIGITIZED_SPEED",
     state:a3FigureSpeedSections.length===sections.length&&sections.length?"ACTIVE":a3FigureSpeedSections.length?"PARTIAL":"INACTIVE",
     regionIds:["BA-DISP-015","BA-DISP-023"],
-    metGates:a3FigureSpeedSections.length?["treadmill setting","level grade","2–5 m/s","source-compatible natural cadence ±5%","figure-digitized low-confidence proxy"]:[],
+    metGates:a3FigureSpeedSections.length?["treadmill setting","level grade","2–5 m/s","group-mean stride-time cadence retained as descriptive provenance only","figure-digitized low-confidence proxy"]:[],
     unmetGates:a3FigureSpeedSections.length===sections.length&&sections.length?[]:["one or more section-level source gates unmet"],
     sourceIds:["RCM-ANCH-A3-034..043"],
     parameterIds:[],
   });
-  const bat009Sections=sections.filter(sectionPassesBat009);
+  const bat009Sections=sections.filter(section=>sectionPassesBat009(section,runSetting));
   routes.push({
     routeId:"BAT_SRC_009_GRADE_EXACT",
     state:bat009Sections.length===sections.length&&sections.length?"ACTIVE":bat009Sections.length?"PARTIAL":"INACTIVE",
-    regionIds:["BA-DISP-015"],
-    metGates:bat009Sections.length?["4.17 m/s compatible speed","0–7% uphill grade"]:[],
+    regionIds:["BA-DISP-015","BA-DISP-016","BA-DISP-023"],
+    metGates:bat009Sections.length?["exact 4.17 m/s source speed","0–7% uphill grade (source knots or bounded within-study interpolation)"]:[],
     unmetGates:bat009Sections.length===sections.length&&sections.length?[]:["one or more section-level source gates unmet"],
     sourceIds:["RCM-ANCH-A1-040..042","RCM-ANCH-A1-057..059","RCM-ANCH-A3-031..033"],
     parameterIds:[],
@@ -229,20 +318,19 @@ export function deriveRegionalEngineState(bundle){
   const gradeSpeedSections=sections.filter(sectionPassesGradeSpeedProfile);
   routes.push({
     routeId:"BAT_SRC_019_GRADE_SPEED_PROFILE",
-    state:gradeSpeedSections.length===sections.length&&sections.length?"ACTIVE":gradeSpeedSections.length?"PARTIAL":"INACTIVE",
-    regionIds:["BA-DISP-015"],
-    metGates:gradeSpeedSections.length?["source grade range","paired source-compatible speed ±0.15 m/s"]:[],
-    unmetGates:gradeSpeedSections.length===sections.length&&sections.length?[]:["one or more section-level source gates unmet"],
+    state:"UNAVAILABLE",
+    regionIds:["BA-DISP-015","BA-DISP-016","BA-DISP-018","BA-DISP-023"],
+    metGates:[],
+    unmetGates:["R21 retired numeric use of BAT-SRC-019 group-mean grade-speed values: source speed was prescribed individually from 10-km performance and the app cannot reproduce that participant-specific protocol; former ±0.15 m/s matching had no source basis"],
     sourceIds:["RCM-ANCH-A1-060..094"],
     parameterIds:[],
   });
-  const unevenSections=sections.filter(sectionPassesBoundedUnevenness);
   routes.push({
     routeId:"BOUNDED_UNEVENNESS_X_SPEED",
-    state:unevenSections.length===sections.length&&sections.length?"ACTIVE":unevenSections.length?"PARTIAL":"INACTIVE",
+    state:"UNAVAILABLE",
     regionIds:["BA-DISP-016","BA-DISP-018","BA-DISP-024"],
-    metGates:unevenSections.length?["unevenness level > 1","source-compatible speed 1.955–2.645 m/s"]:[],
-    unmetGates:unevenSections.length===sections.length&&sections.length?[]:["one or more section-level source gates unmet"],
+    metGates:[],
+    unmetGates:["R20 retired the project ordinal/speed transfer: BAT-SRC-027 measured one artificial uneven treadmill apparatus at 2.3 m/s, which is not represented as an exact app source category"],
     sourceIds:["RCM-ANCH-043..045"],
     parameterIds:["RCM-P-A1-UNEVEN-MAP"],
   });

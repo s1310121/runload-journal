@@ -8,7 +8,32 @@ import { deriveRegionalEngineState } from "./engine-input.js";
 const value=(input,id)=>input.formalInputs[id]?.status==="KNOWN"?input.formalInputs[id].value:null;
 function routeSet(input){return new Set((input.routeEligibility??[]).filter(r=>r.state==="ACTIVE").map(r=>r.routeId));}
 const MUSCLE_EXPOSURE_REGIONS=new Set(["BA-DISP-015","BA-DISP-016","BA-DISP-018","BA-DISP-023"]);
+const CUMULATIVE_PER_KM_REGIONS=new Set(["BA-DISP-019","BA-DISP-021","BA-DISP-025"]);
+const MUSCLE_ENDPOINT_FAMILY_BY_ROUTE=Object.freeze({
+  A3_E02_FIGURE_DIGITIZED_SPEED:"HAMNER_COM_ACCEL_PROXY",
+  A6_NUCKOLS_SOURCE_PROTOCOL_PROXY:"NUCKOLS_JOINT_POWER_PROXY",
+  A3_SRC_SUP_003_JOINT_GRADE:"NUCKOLS_JOINT_POWER_PROXY",
+  BAT_SRC_009_GLUTE_EXACT:"PADULO_EMG_PROXY",
+  A3_BAT_SRC_009_VASTUS_EXACT:"PADULO_EMG_PROXY",
+  BAT_SRC_009_GASTRO_EXACT:"PADULO_EMG_PROXY",
+  A5_WILLER_2024_TABULATED_SPEED_WORK:"WILLER_FUNCTIONAL_WORK_PROXY",
+});
+const MUSCLE_REFERENCE_DEFINITION_BY_REGION_AND_FAMILY=Object.freeze({
+  "BA-DISP-015":Object.freeze({HAMNER_COM_ACCEL_PROXY:"RCM-RDEF-015-HAMNER-COM-ACCEL",NUCKOLS_JOINT_POWER_PROXY:"RCM-RDEF-015-NUCKOLS-JOINT-POWER",PADULO_EMG_PROXY:"RCM-RDEF-015-PADULO-EMG"}),
+  "BA-DISP-016":Object.freeze({NUCKOLS_JOINT_POWER_PROXY:"RCM-RDEF-016-NUCKOLS-JOINT-POWER",PADULO_EMG_PROXY:"RCM-RDEF-016-PADULO-EMG",WILLER_FUNCTIONAL_WORK_PROXY:"RCM-RDEF-016-WILLER-FUNCTIONAL-WORK"}),
+  "BA-DISP-018":Object.freeze({WILLER_FUNCTIONAL_WORK_PROXY:"RCM-RDEF-018-WILLER-FUNCTIONAL-WORK"}),
+  "BA-DISP-023":Object.freeze({HAMNER_COM_ACCEL_PROXY:"RCM-RDEF-023-HAMNER-COM-ACCEL",NUCKOLS_JOINT_POWER_PROXY:"RCM-RDEF-023-NUCKOLS-JOINT-POWER",PADULO_EMG_PROXY:"RCM-RDEF-023-PADULO-EMG",WILLER_FUNCTIONAL_WORK_PROXY:"RCM-RDEF-023-WILLER-FUNCTIONAL-WORK"}),
+});
+const HIP_ENDPOINT_FAMILY_BY_ROUTE=Object.freeze({
+  A3_SRC_SUP_003_JOINT_GRADE:"NUCKOLS_HIP_JOINT_POWER",
+  A5_WILLER_2024_TABULATED_SPEED_WORK:"WILLER_HIP_FUNCTIONAL_WORK",
+});
+const HIP_REFERENCE_DEFINITION_BY_FAMILY=Object.freeze({
+  NUCKOLS_HIP_JOINT_POWER:"RCM-RDEF-014-NUCKOLS-HIP-JOINT-POWER",
+  WILLER_HIP_FUNCTIONAL_WORK:"RCM-RDEF-014-WILLER-HIP-FUNCTIONAL-WORK",
+});
 const TRACE_CONTRACT_VERSION="runload-reason-trace-1.2";
+function muscleEndpointFamilies(routes=[]){return new Set(routes.map(route=>MUSCLE_ENDPOINT_FAMILY_BY_ROUTE[route]).filter(Boolean));}
 function stateForRegion(observations,regionId){
   const regionObservations=(observations??[]).filter(observation=>observation.bodyAreaId===regionId);
   if(!regionObservations.length)return {log:0,overlay:{status:"NONE",observationCount:0,maxIntensity:null,timings:[],sensationTypes:[]},trace:[]};
@@ -42,17 +67,30 @@ function stateForRegion(observations,regionId){
 }
 function selectExposure(input,regionId){
   const steps=value(input,"RL-IN-015");
-  const duration=value(input,"RL-IN-013");
   const distance=value(input,"RL-IN-011");
-  if(MUSCLE_EXPOSURE_REGIONS.has(regionId)){
-    if(steps>0)return {basis:"GAIT_CYCLES",qEquivalent:steps/2,qReference:PARAMETERS["RCM-P-GLOBAL-QREF-GAIT-CYCLES"],alphaE:1,state:"CALCULATED",inputId:"RL-IN-015",parameterId:"RCM-P-GLOBAL-QREF-GAIT-CYCLES",fallback:false};
-    if(duration>0)return {basis:"TIME",qEquivalent:duration,qReference:PARAMETERS["RCM-P-GLOBAL-QREF-TIME"],alphaE:1,state:"PARTIAL",inputId:"RL-IN-013",parameterId:"RCM-P-GLOBAL-QREF-TIME",fallback:true};
-    if(distance>0)return {basis:"DISTANCE",qEquivalent:distance,qReference:PARAMETERS["RCM-P-GLOBAL-QREF"],alphaE:1,state:"PARTIAL",inputId:"RL-IN-011",parameterId:"RCM-P-GLOBAL-QREF",fallback:true};
-  }else{
-    if(steps>0)return {basis:"CONTACTS",qEquivalent:steps,qReference:PARAMETERS["RCM-P-GLOBAL-QREF-STEPS"],alphaE:1,state:"CALCULATED",inputId:"RL-IN-015",parameterId:"RCM-P-GLOBAL-QREF-STEPS",fallback:false};
-    if(distance>0)return {basis:"DISTANCE",qEquivalent:distance,qReference:PARAMETERS["RCM-P-GLOBAL-QREF"],alphaE:1,state:"PARTIAL",inputId:"RL-IN-011",parameterId:"RCM-P-GLOBAL-QREF",fallback:true};
+  if(CUMULATIVE_PER_KM_REGIONS.has(regionId)){
+    // Source constructs already represent cumulative impulse per distance.
+    // Distance remains their source-compatible primary exposure basis.
+    if(distance>0)return {basis:"DISTANCE",qEquivalent:distance,qReference:PARAMETERS["RCM-P-GLOBAL-QREF"],alphaE:1,state:"CALCULATED",inputId:"RL-IN-011",parameterId:"RCM-P-GLOBAL-QREF",fallback:false};
+    return null;
   }
+  if(MUSCLE_EXPOSURE_REGIONS.has(regionId)){
+    // R27: gait-cycle weighting is project-defined and calibrated only to the
+    // explicit step-count input. Do not replace a missing primary exposure
+    // basis with TIME or DISTANCE, because no source calibration links those
+    // units to the same dimensionless Reference-100 scale.
+    if(steps>0)return {basis:"GAIT_CYCLES",qEquivalent:steps/2,qReference:PARAMETERS["RCM-P-GLOBAL-QREF-GAIT-CYCLES"],alphaE:1,state:"CALCULATED",inputId:"RL-IN-015",parameterId:"RCM-P-GLOBAL-QREF-GAIT-CYCLES",fallback:false};
+    return null;
+  }
+  // Other non-cumulative regions use explicit contacts as the primary project
+  // exposure basis. A missing step count is not imputed from distance.
+  if(steps>0)return {basis:"CONTACTS",qEquivalent:steps,qReference:PARAMETERS["RCM-P-GLOBAL-QREF-STEPS"],alphaE:1,state:"CALCULATED",inputId:"RL-IN-015",parameterId:"RCM-P-GLOBAL-QREF-STEPS",fallback:false};
   return null;
+}
+function primaryExposureRequirement(regionId){
+  if(CUMULATIVE_PER_KM_REGIONS.has(regionId))return {basis:"DISTANCE",inputId:"RL-IN-011"};
+  if(MUSCLE_EXPOSURE_REGIONS.has(regionId))return {basis:"GAIT_CYCLES",inputId:"RL-IN-015"};
+  return {basis:"CONTACTS",inputId:"RL-IN-015"};
 }
 function integrationWeight(section){
   const basisValue={
@@ -117,6 +155,7 @@ function sectionInputIds(section,result){
   if(["UPHILL","DOWNHILL","FLAT"].includes(section.gradeDirection))ids.add("RL-IN-032");
   if(section.runningFormat)ids.add("RL-IN-017");
   if((section.surfaceComponents??[]).length){ids.add("RL-IN-040");ids.add("RL-IN-041");}
+  if(result.routes.includes("A6_HO2010_HEEL_PEAK_PRESSURE")){ids.add("RL-IN-018");ids.add("RL-IN-032");}
   if(result.routes.includes("SURFACE_X_STANDARD_SHOE")||result.routes.includes("ARCH_SURFACE_X_HEELED_SHOE")||result.routes.includes("A4_HORIGUCHI_PLANTAR_PEAK_PRESSURE")||result.trace.some(item=>item.message?.includes("surface"))){ids.add("RL-IN-072");ids.add("RL-IN-073");ids.add("RL-IN-080");}
   return [...ids];
 }
@@ -143,15 +182,19 @@ function sectionConditionContributionEvent(regionId,draft,totalWeight){
   return {
     traceCode:"SECTION_CONDITION_CONTRIBUTION",severity:"INFO",scope:"SECTION",regionId,sectionId:draft.sectionId,
     routeId:conditionRouteId(draft.routes),messageKey:"regional.condition.section_contribution",
-    messageArgs:{traceContractVersion:TRACE_CONTRACT_VERSION,sectionWeight:draft.weight,totalWeight,normalizedSectionWeight,conditionRatio:draft.ratio,conditionLogRaw:Math.log(draft.ratio),routeIds:[...draft.routes],interactionIds:[...draft.interactions],componentCoverage:draft.componentCoverage,missingProvenanceReasons:missingProvenanceReasons(draft)},
+    messageArgs:{traceContractVersion:TRACE_CONTRACT_VERSION,sectionWeight:draft.weight,totalWeight,normalizedSectionWeight,conditionRatio:draft.ratio,conditionLogRaw:Math.log(draft.ratio),routeIds:[...draft.routes],interactionIds:[...draft.interactions],componentCoverage:draft.componentCoverage,evidenceRange:draft.evidenceRange,missingProvenanceReasons:missingProvenanceReasons(draft)},
     numericEffectApplied:true,contributionLog:normalizedSectionWeight*Math.log(draft.ratio),inputIds:[...draft.inputIds],sourceIds:[...draft.sources],parameterIds:[...draft.parameters],
   };
 }
 function exposureContributionEvent(regionId,exposure,exposureLog){
+  const muscleProjectWeight=MUSCLE_EXPOSURE_REGIONS.has(regionId);
+  const sourceProvenance=muscleProjectWeight
+    ?"PROJECT_DIMENSIONLESS_REPETITION_WEIGHTING_NO_DIRECT_SOURCE_CALIBRATION"
+    :"PROJECT_LINEAR_REFERENCE_RULE_NO_DIRECT_SOURCE";
   return {
     traceCode:"EXPOSURE_CONTRIBUTION",severity:"INFO",scope:"REGION",regionId,sectionId:null,
     routeId:`EXPOSURE_${exposure.basis}${exposure.fallback?"_FALLBACK":""}`,messageKey:"regional.exposure.contribution",
-    messageArgs:{traceContractVersion:TRACE_CONTRACT_VERSION,basis:exposure.basis,fallback:exposure.fallback,fallbackStatus:exposure.fallback?"FALLBACK":"PRIMARY",qEquivalent:exposure.qEquivalent,qReference:exposure.qReference,alphaE:exposure.alphaE,exposureRatio:exposure.qEquivalent/exposure.qReference,sourceProvenance:"PROJECT_LINEAR_REFERENCE_RULE_NO_DIRECT_SOURCE"},
+    messageArgs:{traceContractVersion:TRACE_CONTRACT_VERSION,basis:exposure.basis,fallback:exposure.fallback,fallbackStatus:exposure.fallback?"FALLBACK":"PRIMARY",qEquivalent:exposure.qEquivalent,qReference:exposure.qReference,alphaE:exposure.alphaE,exposureRatio:exposure.qEquivalent/exposure.qReference,sourceProvenance,physicalAccumulationClaim:muscleProjectWeight?"PROHIBITED":"NOT_ASSERTED"},
     numericEffectApplied:true,contributionLog:exposureLog,inputIds:[exposure.inputId],sourceIds:[],parameterIds:[exposure.parameterId,"RCM-P-GLOBAL-ALPHAE"],
   };
 }
@@ -179,10 +222,38 @@ function globalInputAccountingTrace(input,regions){
   return events;
 }
 
-function effectiveRegionSemanticIdentity(region,activeRouteIds){
+function effectiveRegionSemanticIdentity(region,activeRouteIds,activeEndpointFamilyIds=new Set()){
+  if(region.id==="BA-DISP-014"&&activeEndpointFamilyIds.size===1){
+    const family=[...activeEndpointFamilyIds][0];
+    const referenceDefinitionId=HIP_REFERENCE_DEFINITION_BY_FAMILY[family];
+    if(referenceDefinitionId)return {constructId:region.constructId,referenceDefinitionId};
+  }
+  if(MUSCLE_EXPOSURE_REGIONS.has(region.id)&&activeEndpointFamilyIds.size===1){
+    const family=[...activeEndpointFamilyIds][0];
+    const referenceDefinitionId=MUSCLE_REFERENCE_DEFINITION_BY_REGION_AND_FAMILY[region.id]?.[family];
+    if(referenceDefinitionId)return {constructId:region.constructId,referenceDefinitionId};
+  }
+  // R29: endpoint-family semantic identities for contact-weighted foot/ankle routes.
+  // The numeric index remains dimensionless. CONTACTS is a project repetition
+  // weighting and must not silently turn joint power or peak angle into physical
+  // total work/dose. Pressure-time and peak-pressure endpoint families also keep
+  // distinct Reference-100 anchors.
+  if(activeRouteIds.has("A3_SRC_SUP_003_JOINT_GRADE")&&region.id==="BA-DISP-024"){
+    return {constructId:"ANKLE_JOINT_POWER_REPETITION_PROXY_TENDENCY",referenceDefinitionId:"RCM-RDEF-024-NUCKOLS-ANKLE-JOINT-POWER-REPETITION"};
+  }
   if(activeRouteIds.has("A4_HORIGUCHI_PLANTAR_PEAK_PRESSURE")){
     if(region.id==="BA-DISP-027")return {constructId:"REARFOOT_CUMULATIVE_PEAK_PRESSURE_EXPOSURE_PROXY_TENDENCY",referenceDefinitionId:"RCM-RDEF-027-A4-HORIGUCHI-PEAK"};
     if(region.id==="BA-DISP-029")return {constructId:"FOREFOOT_CUMULATIVE_PEAK_PRESSURE_EXPOSURE_PROXY_TENDENCY",referenceDefinitionId:"RCM-RDEF-029-A4-HORIGUCHI-PEAK"};
+  }
+  if(activeRouteIds.has("A6_HO2010_HEEL_PEAK_PRESSURE")&&region.id==="BA-DISP-027"){
+    return {constructId:"REARFOOT_CUMULATIVE_PEAK_PRESSURE_EXPOSURE_PROXY_TENDENCY",referenceDefinitionId:"RCM-RDEF-027-A6-HO2010-HEEL-PEAK"};
+  }
+  if(activeRouteIds.has("SURFACE_X_STANDARD_SHOE")){
+    if(region.id==="BA-DISP-027")return {constructId:"REARFOOT_CUMULATIVE_PRESSURE_TIME_EXPOSURE_TENDENCY",referenceDefinitionId:"RCM-RDEF-027-TESSUTTI-SURFACE-PTI"};
+    if(region.id==="BA-DISP-029")return {constructId:"FOREFOOT_CUMULATIVE_PRESSURE_TIME_EXPOSURE_TENDENCY",referenceDefinitionId:"RCM-RDEF-029-TESSUTTI-SURFACE-PTI"};
+  }
+  if(activeRouteIds.has("ARCH_SURFACE_X_HEELED_SHOE")&&region.id==="BA-DISP-028"){
+    return {constructId:"MEDIAL_LONGITUDINAL_ARCH_PEAK_ANGLE_REPETITION_PROXY_TENDENCY",referenceDefinitionId:"RCM-RDEF-028-YAMIN-PEAK-MLA-REPETITION"};
   }
   return {constructId:region.constructId,referenceDefinitionId:region.referenceDefinitionId};
 }
@@ -213,29 +284,53 @@ export function calculateRegionalLoad(engineInput){
     if(sectionSpeeds.some(speed=>speed<.5||speed>5))return checkedSuccess(buildUnavailable(engineInput,"OUT_OF_SUPPORTED_RANGE","One or more section speeds are outside the 0.5–5.0 m/s model domain."));
     const rset=routeSet(engineInput);const observations=value(engineInput,"RL-IN-101")??[];const footPlacement=value(engineInput,"RL-IN-080")??"UNKNOWN";
     const regions=[];
-    for(const region of REGIONS){let sumLog=0,totalWeight=0,state="CALCULATED",primaryUnavailable=false;const activeRouteIds=new Set(),activeInteractionIds=new Set(),sourceIds=new Set(),parameterIds=new Set(),usedInputIds=new Set(),omittedInputIds=new Set(),reasonTrace=[],sectionComponentCoverage=[],sectionContributionDrafts=[];
+    for(const region of REGIONS){let sumLog=0,totalWeight=0,state="CALCULATED",primaryUnavailable=false;const activeRouteIds=new Set(),activeEndpointFamilyIds=new Set(),activeInteractionIds=new Set(),sourceIds=new Set(),parameterIds=new Set(),usedInputIds=new Set(),omittedInputIds=new Set(),reasonTrace=[],sectionComponentCoverage=[],sectionContributionDrafts=[],supportedConditionSectionIds=[],unsupportedConditionSectionIds=[];
       for(const section of sections){const weight=integrationWeight(section);if(!(weight>0)){state=mergeState(state,"PARTIAL");reasonTrace.push({traceCode:"SECTION_WEIGHT_MISSING",severity:"WARNING",scope:"SECTION",regionId:region.id,sectionId:section.sectionId??null,routeId:null,messageKey:"section.weight_missing",messageArgs:{},numericEffectApplied:false,contributionLog:null,inputIds:["RL-IN-039"],sourceIds:[],parameterIds:[]});continue;}
         const gait=normalizeGait(section.runningFormat);const result=evaluateRegionCondition(region.id,{speedMps:section.speedMps??engineInput.derivedConditions.averageSpeedMps,cadenceSpm:section.cadenceSpm??engineInput.derivedConditions.averageCadenceSpm,gradePercent:signedGradePercent(section),gait,runSetting:value(engineInput,"RL-IN-018"),footPlacement,surfaceComponents:section.surfaceComponents??value(engineInput,"RL-IN-041")??[],exactSurfaceActive:exactSurfaceActiveForSection(section,engineInput),exactArchSurfaceActive:exactArchSurfaceActiveForSection(section,engineInput),routeSet:rset});const sectionInputs=accountSectionInputs(section,result,usedInputIds);
         state=mergeState(state,result.state);
-        if(result.ratio==null){primaryUnavailable=true;for(const t of result.trace)reasonTrace.push({traceCode:t.traceCode,severity:"WARNING",scope:"REGION",regionId:region.id,sectionId:section.sectionId??null,routeId:null,messageKey:"regional.route.unavailable",messageArgs:{message:t.message},numericEffectApplied:false,contributionLog:null,inputIds:[],sourceIds:[],parameterIds:[]});continue;}
-        const ratio=result.ratio;sumLog+=weight*Math.log(ratio);totalWeight+=weight;sectionContributionDrafts.push({sectionId:section.sectionId??null,weight,ratio,inputIds:sectionInputs,routes:[...result.routes],interactions:[...result.interactions],sources:[...result.sources],parameters:[...result.parameters],componentCoverage:result.componentCoverage});for(const x of result.routes)activeRouteIds.add(x);for(const x of result.interactions)activeInteractionIds.add(x);for(const x of result.sources)sourceIds.add(x);for(const x of result.parameters)parameterIds.add(x);
+        if(result.ratio==null){primaryUnavailable=true;for(const t of result.trace)reasonTrace.push({traceCode:t.traceCode,severity:"WARNING",scope:"REGION",regionId:region.id,sectionId:section.sectionId??null,routeId:null,messageKey:"regional.route.unavailable",messageArgs:{message:t.message,evidenceRange:result.evidenceRange},numericEffectApplied:false,contributionLog:null,inputIds:[],sourceIds:[],parameterIds:[]});continue;}
+        const ratio=result.ratio;const sectionId=section.sectionId??null;const hasNumericConditionRoute=(result.routes?.length??0)>0;if(hasNumericConditionRoute)supportedConditionSectionIds.push(sectionId);else unsupportedConditionSectionIds.push(sectionId);sumLog+=weight*Math.log(ratio);totalWeight+=weight;sectionContributionDrafts.push({sectionId,weight,ratio,inputIds:sectionInputs,routes:[...result.routes],interactions:[...result.interactions],sources:[...result.sources],parameters:[...result.parameters],componentCoverage:result.componentCoverage,evidenceRange:result.evidenceRange});for(const x of result.routes){activeRouteIds.add(x);const family=MUSCLE_EXPOSURE_REGIONS.has(region.id)?MUSCLE_ENDPOINT_FAMILY_BY_ROUTE[x]:region.id==="BA-DISP-014"?HIP_ENDPOINT_FAMILY_BY_ROUTE[x]:null;if(family)activeEndpointFamilyIds.add(family);}for(const x of result.interactions)activeInteractionIds.add(x);for(const x of result.sources)sourceIds.add(x);for(const x of result.parameters)parameterIds.add(x);
         sectionComponentCoverage.push({sectionId:section.sectionId??null,...result.componentCoverage});
         if(result.componentCoverage?.state==="PARTIAL"){
           state=mergeState(state,"PARTIAL");
           reasonTrace.push({traceCode:"COMPONENT_COVERAGE_PARTIAL",severity:"INFO",scope:"SECTION",regionId:region.id,sectionId:section.sectionId??null,routeId:null,messageKey:"regional.component_coverage.partial",messageArgs:{observedComponentIds:result.componentCoverage.observedComponentIds,missingComponentIds:result.componentCoverage.missingComponentIds},numericEffectApplied:false,contributionLog:null,inputIds:[],sourceIds:[...result.sources],parameterIds:[...result.parameters]});
         }
-        for(const t of result.trace)reasonTrace.push({traceCode:t.traceCode,severity:"WARNING",scope:"REGION",regionId:region.id,sectionId:section.sectionId??null,routeId:null,messageKey:"regional.route.partial",messageArgs:{message:t.message,numericContributionRepresentedBy:t.numericEffectApplied?"SECTION_CONDITION_CONTRIBUTION":null},numericEffectApplied:false,contributionLog:null,inputIds:[],sourceIds:[],parameterIds:[]});}
+        for(const t of result.trace)reasonTrace.push({traceCode:t.traceCode,severity:"WARNING",scope:"REGION",regionId:region.id,sectionId:section.sectionId??null,routeId:null,messageKey:"regional.route.partial",messageArgs:{message:t.message,numericContributionRepresentedBy:t.numericEffectApplied?"SECTION_CONDITION_CONTRIBUTION":null,evidenceRange:result.evidenceRange},numericEffectApplied:false,contributionLog:null,inputIds:[],sourceIds:[],parameterIds:[]});}
       if(primaryUnavailable){regions.push(nullRegion(region,state==="CALCULATED"?"NOT_CALCULABLE":state,reasonTrace));continue;}
       if(!(totalWeight>0)){regions.push(nullRegion(region,state==="CALCULATED"?"NOT_CALCULABLE":state,reasonTrace));continue;}
+      if(activeRouteIds.size>0&&unsupportedConditionSectionIds.length>0){
+        reasonTrace.push({traceCode:"MIXED_SUPPORTED_UNSUPPORTED_SECTION_IMPUTATION_PROHIBITED",severity:"WARNING",scope:"REGION",regionId:region.id,sectionId:null,routeId:null,messageKey:"regional.mixed_supported_unsupported.prohibited",messageArgs:{supportedConditionSectionIds:[...supportedConditionSectionIds],unsupportedConditionSectionIds:[...unsupportedConditionSectionIds],activeRouteIds:[...activeRouteIds].sort(),reason:"UNKNOWN_SECTION_CONDITION_RATIO_MUST_NOT_BE_IMPUTED_AS_ONE"},numericEffectApplied:false,contributionLog:null,inputIds:[],sourceIds:[...sourceIds],parameterIds:[]});
+        regions.push(nullRegion(region,"NOT_CALCULABLE",reasonTrace));continue;
+      }
+      if(activeRouteIds.size===0&&unsupportedConditionSectionIds.length>0){
+        reasonTrace.push({traceCode:"EXPOSURE_ONLY_ALL_SECTIONS_CONDITION_UNSUPPORTED",severity:"INFO",scope:"REGION",regionId:region.id,sectionId:null,routeId:null,messageKey:"regional.exposure_only.condition_unsupported",messageArgs:{unsupportedConditionSectionIds:[...unsupportedConditionSectionIds],interpretation:"NO_NUMERIC_CONDITION_MAGNITUDE_APPLIED"},numericEffectApplied:false,contributionLog:null,inputIds:[],sourceIds:[...sourceIds],parameterIds:[]});
+      }
+      if(region.id==="BA-DISP-014"&&activeEndpointFamilyIds.size>1){
+        reasonTrace.push({traceCode:"HETEROGENEOUS_ENDPOINT_FAMILY_MIX_PROHIBITED",severity:"WARNING",scope:"REGION",regionId:region.id,sectionId:null,routeId:null,messageKey:"regional.endpoint_family_mix.prohibited",messageArgs:{endpointFamilies:[...activeEndpointFamilyIds].sort(),activeRouteIds:[...activeRouteIds].sort(),reason:"NO_CROSS_SOURCE_REFERENCE_CALIBRATION_FOR_WITHIN_RECORD_AGGREGATION"},numericEffectApplied:false,contributionLog:null,inputIds:[],sourceIds:[...sourceIds],parameterIds:[]});
+        regions.push(nullRegion(region,"NOT_CALCULABLE",reasonTrace));continue;
+      }
+      if(MUSCLE_EXPOSURE_REGIONS.has(region.id)&&activeEndpointFamilyIds.size>1){
+        reasonTrace.push({traceCode:"HETEROGENEOUS_PROXY_FAMILY_MIX_PROHIBITED",severity:"WARNING",scope:"REGION",regionId:region.id,sectionId:null,routeId:null,messageKey:"regional.proxy_family_mix.prohibited",messageArgs:{endpointFamilies:[...activeEndpointFamilyIds].sort(),activeRouteIds:[...activeRouteIds].sort(),reason:"NO_CROSS_SOURCE_MAGNITUDE_CALIBRATION_FOR_WITHIN_RECORD_AGGREGATION"},numericEffectApplied:false,contributionLog:null,inputIds:[],sourceIds:[...sourceIds],parameterIds:[]});
+        regions.push(nullRegion(region,"NOT_CALCULABLE",reasonTrace));continue;
+      }
       const conditionLog=sumLog/totalWeight;const exposure=selectExposure(engineInput,region.id);
-      if(!exposure){regions.push(nullRegion(region,"NOT_CALCULABLE",reasonTrace));continue;}
+      if(!exposure){
+        const requirement=primaryExposureRequirement(region.id);
+        reasonTrace.push({traceCode:"PRIMARY_EXPOSURE_BASIS_UNAVAILABLE_UNCALIBRATED_FALLBACK_PROHIBITED",severity:"WARNING",scope:"REGION",regionId:region.id,sectionId:null,routeId:null,messageKey:"regional.exposure.primary_unavailable",messageArgs:{requiredBasis:requirement.basis,requiredInputId:requirement.inputId,fallbackPolicy:"PROHIBITED_NO_SOURCE_CALIBRATION"},numericEffectApplied:false,contributionLog:null,inputIds:[requirement.inputId],sourceIds:[],parameterIds:[]});
+        regions.push(nullRegion(region,"NOT_CALCULABLE",reasonTrace));continue;
+      }
       state=mergeState(state,exposure.state);
       usedInputIds.add(exposure.inputId);
       parameterIds.add(exposure.parameterId);
       parameterIds.add("RCM-P-GLOBAL-ALPHAE");
       if(exposure.fallback)reasonTrace.push({traceCode:"EXPOSURE_BASIS_FALLBACK",severity:"INFO",scope:"REGION",regionId:region.id,sectionId:null,routeId:null,messageKey:"regional.exposure.fallback",messageArgs:{basis:exposure.basis,numericContributionRepresentedBy:"EXPOSURE_CONTRIBUTION"},numericEffectApplied:false,contributionLog:null,inputIds:[exposure.inputId],sourceIds:[],parameterIds:[exposure.parameterId,"RCM-P-GLOBAL-ALPHAE"]});
       const exposureLog=exposure.alphaE*Math.log(exposure.qEquivalent/exposure.qReference);const self=stateForRegion(observations,region.id);for(const event of self.trace)for(const id of event.inputIds)usedInputIds.add(id);completeRegionInputAccounting(engineInput,usedInputIds,omittedInputIds);const totalLog=conditionLog+exposureLog;const mechanical=100*Math.exp(totalLog);const index=mechanical;const contributionTrace=[...sectionContributionDrafts.map(draft=>sectionConditionContributionEvent(region.id,draft,totalWeight)),exposureContributionEvent(region.id,exposure,exposureLog)];const finalReasonTrace=[...contributionTrace,...reasonTrace,...self.trace];
-      const semanticIdentity=effectiveRegionSemanticIdentity(region,activeRouteIds);regions.push({regionId:region.id,regionName:region.name,constructId:semanticIdentity.constructId,referenceDefinitionId:semanticIdentity.referenceDefinitionId,referenceValue:100,indexExact:index,deltaFromReferenceExact:index-100,displayIndex:Math.round(index),displayDeltaPoints:Math.round(index-100),calculationState:state,components:{conditionLog,exposureLog,interactionLog:0,personalModifierLog:0,selfReportedStateLog:0,totalLog,mechanicalIndexWithoutSelfState:mechanical,selfReportedStateMultiplier:1},exposure:{basis:exposure.basis,qEquivalent:exposure.qEquivalent,qReference:exposure.qReference,alphaE:exposure.alphaE},componentCoverage:{state:sectionComponentCoverage.some(item=>item.state==="PARTIAL")?"PARTIAL":"FULL",sections:sectionComponentCoverage},observationOverlay:self.overlay,activeRouteIds:[...activeRouteIds],activeInteractionIds:[...activeInteractionIds],usedInputIds:[...usedInputIds],omittedInputIds:[...omittedInputIds],sourceIds:[...sourceIds],parameterIds:[...parameterIds],reasonTrace:finalReasonTrace,limitations:["relative_model_estimate_not_measurement","cross_region_physical_comparison_prohibited"]});}
+      const semanticIdentity=effectiveRegionSemanticIdentity(region,activeRouteIds,activeEndpointFamilyIds);const limitations=["relative_model_estimate_not_measurement","cross_region_physical_comparison_prohibited"];if(MUSCLE_EXPOSURE_REGIONS.has(region.id)){limitations.push("project_dimensionless_repetition_weighting_not_physical_integral","source_endpoint_family_reference_specific");}
+      if(region.id==="BA-DISP-024"&&activeRouteIds.has("A3_SRC_SUP_003_JOINT_GRADE"))limitations.push("project_contact_repetition_weighting_not_physical_total_work","source_endpoint_stride_average_joint_power");
+      if(region.id==="BA-DISP-028"&&activeRouteIds.has("ARCH_SURFACE_X_HEELED_SHOE"))limitations.push("project_contact_repetition_weighting_not_physical_arch_dose","source_endpoint_peak_mla_angle");
+      if((region.id==="BA-DISP-027"||region.id==="BA-DISP-029")&&activeRouteIds.has("SURFACE_X_STANDARD_SHOE"))limitations.push("surface_source_pti_per_contact_scaled_by_contacts_as_normalized_exposure_proxy");
+      if((region.id==="BA-DISP-027"||region.id==="BA-DISP-029")&&(activeRouteIds.has("A4_HORIGUCHI_PLANTAR_PEAK_PRESSURE")||activeRouteIds.has("A6_HO2010_HEEL_PEAK_PRESSURE")))limitations.push("peak_pressure_per_contact_scaled_by_contacts_as_cumulative_peak_exposure_proxy_not_pti");
+      regions.push({regionId:region.id,regionName:region.name,constructId:semanticIdentity.constructId,referenceDefinitionId:semanticIdentity.referenceDefinitionId,referenceValue:100,indexExact:index,deltaFromReferenceExact:index-100,displayIndex:Math.round(index),displayDeltaPoints:Math.round(index-100),calculationState:state,components:{conditionLog,exposureLog,interactionLog:0,personalModifierLog:0,selfReportedStateLog:0,totalLog,mechanicalIndexWithoutSelfState:mechanical,selfReportedStateMultiplier:1},exposure:{basis:exposure.basis,qEquivalent:exposure.qEquivalent,qReference:exposure.qReference,alphaE:exposure.alphaE},componentCoverage:{state:sectionComponentCoverage.some(item=>item.state==="PARTIAL")?"PARTIAL":"FULL",sections:sectionComponentCoverage},observationOverlay:self.overlay,activeRouteIds:[...activeRouteIds],activeInteractionIds:[...activeInteractionIds],usedInputIds:[...usedInputIds],omittedInputIds:[...omittedInputIds],sourceIds:[...sourceIds],parameterIds:[...parameterIds],reasonTrace:finalReasonTrace,limitations});}
     const counts={calculatedRegionCount:regions.filter(r=>r.calculationState==="CALCULATED").length,partialRegionCount:regions.filter(r=>r.calculationState==="PARTIAL").length,notCalculableRegionCount:regions.filter(r=>r.calculationState==="NOT_CALCULABLE").length,outOfRangeRegionCount:regions.filter(r=>r.calculationState==="OUT_OF_SUPPORTED_RANGE").length,notApplicableRegionCount:regions.filter(r=>r.calculationState==="NOT_APPLICABLE").length};
     const base={schemaVersion:"runload-regional-engine-output-1.0",traceContractVersion:TRACE_CONTRACT_VERSION,authorityVersion:AUTHORITY_VERSION,parameterSetVersion:PARAMETER_SET_VERSION,engineBuildVersion:engineInput.engineBuildVersion,sessionId:engineInput.recordSnapshot.sessionId,recordRevision:engineInput.recordSnapshot.recordRevision,inputSnapshotHash:engineInput.recordSnapshot.inputSnapshotHash,overallCalculationState:worstCalculationState(regions.map(r=>r.calculationState)),regions,globalReasonTrace:[{traceCode:"PLANNED_INPUT_IGNORED",severity:"INFO",scope:"GLOBAL",regionId:null,sectionId:null,routeId:null,messageKey:"plan.excluded_from_actual",messageArgs:{},numericEffectApplied:false,contributionLog:null,inputIds:["RL-IN-130","RL-IN-131","RL-IN-132","RL-IN-133","RL-IN-134","RL-IN-135","RL-IN-136","RL-IN-137","RL-IN-138","RL-IN-139","RL-IN-140"],sourceIds:[],parameterIds:["RCM-P-PLAN-ACTUAL"]},...globalInputAccountingTrace(engineInput,regions)],coverageSummary:counts,prohibitedFieldsAbsent:{crossRegionRank:true,overallEstimatedLoad:true,injuryRisk:true,dangerScore:true,runRestDecision:true,personalHistoryDelta:true}};
     return checkedSuccess({...base,resultHash:hashCanonical(base)});

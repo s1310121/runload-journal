@@ -6,7 +6,8 @@ export const HORIGUCHI_PLANTAR_PEAK_PRESSURE_SOURCE = Object.freeze({
   sourceId: "SRC-A4-001",
   runSetting: "TREADMILL",
   speedMps: 3.33,
-  speedToleranceFraction: 0.05,
+  speedMatchEpsilonMps: 1e-9,
+  historicalSpeedToleranceFraction: 0.05, // retired R31; not source-defined and not used by numeric routing
   requiredShoeType: "TRAINING",
   requiredShoeSoftness: "NORMAL",
   gradeDegrees: [-6, 0, 6],

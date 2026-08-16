@@ -9,8 +9,8 @@ import { FORMAL_INPUT_CATALOG } from "./engine/data.js";
 import { hashCanonical } from "./engine/sha256.js";
 import { adaptStoredRecordToRegionalV1Ui, regionalV1ProfileContext } from "./regionalV1InputAdapter.js";
 
-export const REGIONAL_V1_MODEL_VERSION = "runload-regional-model-v1.1-a5";
-export const REGIONAL_V1_ENGINE_BUILD = "runload-prototype-integration-v1.1-a5-trace1";
+export const REGIONAL_V1_MODEL_VERSION = "runload-regional-model-v1.1-a6-candidate";
+export const REGIONAL_V1_ENGINE_BUILD = "runload-prototype-integration-v1.1-a6-candidate-trace1";
 export const REGIONAL_V1_OUTPUT_SEMANTIC_VERSION = "runload-regional-output-semantics-1.0";
 
 const ENDPOINT_META = Object.freeze({
@@ -54,6 +54,11 @@ const ENDPOINT_META = Object.freeze({
     label: "足首まわりの機械的仕事傾向",
     shortLabel: "関節仕事",
   }),
+  ANKLE_JOINT_POWER_REPETITION_PROXY_TENDENCY: Object.freeze({
+    family: "足関節powerの反復proxy傾向",
+    label: "足首まわりの関節power反復proxy傾向",
+    shortLabel: "関節power proxy",
+  }),
   ACHILLES_CUMULATIVE_STRAIN_IMPULSE_TENDENCY: Object.freeze({
     family: "累積的なstrain・力積傾向",
     label: "アキレス腱周辺の累積的なstrain力積傾向",
@@ -79,6 +84,11 @@ const ENDPOINT_META = Object.freeze({
     family: "足部アーチの機械的制御傾向",
     label: "土踏まず・足裏中央の機械的制御傾向",
     shortLabel: "アーチ制御",
+  }),
+  MEDIAL_LONGITUDINAL_ARCH_PEAK_ANGLE_REPETITION_PROXY_TENDENCY: Object.freeze({
+    family: "足部アーチ角度の反復proxy傾向",
+    label: "土踏まず・足裏中央のアーチ角度反復proxy傾向",
+    shortLabel: "アーチ角度proxy",
   }),
   FOREFOOT_CUMULATIVE_PRESSURE_TIME_EXPOSURE_TENDENCY: Object.freeze({
     family: "圧力×時間の累積曝露傾向",
@@ -126,6 +136,7 @@ const SOURCE_MATCHED_ROUTES = new Set([
   "A3_E02_FIGURE_DIGITIZED_SPEED",
   "A3_BAT_SRC_009_VASTUS_EXACT",
   "A4_HORIGUCHI_PLANTAR_PEAK_PRESSURE",
+  "A6_HO2010_HEEL_PEAK_PRESSURE",
 ]);
 const PROJECT_ROUTES = new Set([
   "HIP_PROJECT_ROUTE",
@@ -135,6 +146,8 @@ const PROJECT_ROUTES = new Set([
   "ARCH_SPEED_OR_GAIT",
   "ARCH_GAIT_CATEGORICAL",
   "BOUNDED_UNEVENNESS_X_SPEED",
+  "A6_NUCKOLS_BOUNDED_GRADE_TRANSFER",
+  "A6_BAT_SRC_019_LOCAL_GRADE_SPEED_ENVELOPE",
 ]);
 
 function hasContextValue(value) {
@@ -218,8 +231,31 @@ function fallbackApplied(row = {}) {
   ));
 }
 
+function exposureOnlyConditionUnsupported(row = {}) {
+  return (row.reasonTrace || []).some((event) => event?.traceCode === "EXPOSURE_ONLY_ALL_SECTIONS_CONDITION_UNSUPPORTED");
+}
+
+export function regionalV1ConditionSupportMeta(row = {}) {
+  if (exposureOnlyConditionUnsupported(row)) return Object.freeze({
+    status: "EXPOSURE_ONLY_CONDITION_UNSUPPORTED",
+    label: "走行量のみで表示",
+    shortLabel: "条件効果は未推定",
+  });
+  if ((row.activeRouteIds || []).length) return Object.freeze({
+    status: "CONDITION_ROUTE_APPLIED",
+    label: "走行条件を反映",
+    shortLabel: "条件効果を反映",
+  });
+  return Object.freeze({
+    status: "NO_CONDITION_ROUTE",
+    label: "条件routeなし",
+    shortLabel: "条件routeなし",
+  });
+}
+
 function routeClass(row = {}) {
   const routes = uniqueSorted(row.activeRouteIds || []);
+  if (exposureOnlyConditionUnsupported(row)) return "EXPOSURE_ONLY_CONDITION_UNSUPPORTED";
   if (!routes.length) return "REFERENCE_OR_NEUTRAL";
   const hasSource = routes.some((route) => SOURCE_MATCHED_ROUTES.has(route) || route.startsWith("DIRECT_") || route.startsWith("BAT_SRC_"));
   const hasProject = routes.some((route) => PROJECT_ROUTES.has(route));
@@ -381,6 +417,7 @@ export function buildRegionalV1ComparisonSignature(resultRecord = {}, rowOrRegio
     coverageState: coverage.state,
     coverageSignature: coverage.signature,
     routeClass: routeClass(row),
+    conditionSupportStatus: regionalV1ConditionSupportMeta(row).status,
   });
 }
 
@@ -407,6 +444,7 @@ export function compareRegionalV1Signatures(current, candidate) {
     "coverageState",
     "coverageSignature",
     "routeClass",
+    "conditionSupportStatus",
   ];
   const canonicalDifferences = canonicalFields.filter((field) => (
     ["referenceValue"].includes(field)
@@ -458,6 +496,7 @@ export function buildRegionalV1HistoryComparison({ currentExperience, experience
         date: experience.record.date || "",
         value: candidateValue,
         calculationState: candidateRow?.calculationState || null,
+        conditionSupportStatus: regionalV1ConditionSupportMeta(candidateRow || {}).status,
         signature: candidateSignature,
         compatibility,
         directDelta,
@@ -496,6 +535,7 @@ export function buildRegionalV1PreviousComparable({ currentExperience, experienc
       status: "CURRENT_UNAVAILABLE",
       regionId,
       currentIndexExact,
+      conditionSupportStatus: regionalV1ConditionSupportMeta(currentRow || {}).status,
       previous: null,
       percentChangeExact: null,
       percentChangeRounded: null,
@@ -520,6 +560,7 @@ export function buildRegionalV1PreviousComparable({ currentExperience, experienc
         indexExact,
         displayIndex: finite(candidateRow?.displayIndex) ? Number(candidateRow.displayIndex) : null,
         calculationState: candidateRow?.calculationState || null,
+        conditionSupportStatus: regionalV1ConditionSupportMeta(candidateRow || {}).status,
         signature,
         compatibility,
       });
@@ -537,6 +578,7 @@ export function buildRegionalV1PreviousComparable({ currentExperience, experienc
       status: nearest ? "NO_COMPARABLE_RECORD" : "NO_PREVIOUS_RECORD",
       regionId,
       currentIndexExact,
+      conditionSupportStatus: regionalV1ConditionSupportMeta(currentRow || {}).status,
       previous: nearest,
       percentChangeExact: null,
       percentChangeRounded: null,
@@ -553,6 +595,7 @@ export function buildRegionalV1PreviousComparable({ currentExperience, experienc
     status: "COMPARABLE",
     regionId,
     currentIndexExact,
+    conditionSupportStatus: regionalV1ConditionSupportMeta(currentRow || {}).status,
     previous,
     percentChangeExact,
     percentChangeRounded: Math.round(percentChangeExact),
