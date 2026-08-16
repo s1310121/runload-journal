@@ -1,7 +1,0 @@
-{
-  "name": "runload-journal-current",
-  "private": true,
-  "type": "module",
-  "description": "RunLoad maintenance candidate V1.4.10 static web application for VS Code Live Server and GitHub Pages",
-  "version": "1.4.10"
-}
