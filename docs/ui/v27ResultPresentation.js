@@ -262,8 +262,8 @@ export function renderV27RegionalCard({ resultRecord, selectedView }) {
     ? selectedView
     : V27_REGIONAL_VIEW_IDS.withinRun;
   return `<section class="result-card result-card--distribution result-card--regional-v27" data-information-role="model" aria-labelledby="distribution-title" data-regional-result-card data-record-id="${escapeHtml(resultRecord.record_id)}">
-    <div class="result-card__heading"><div><p>部位ごとの比較表示</p><h2 id="distribution-title">部位ごとの負荷傾向指数</h2></div>${renderStatusLabel(VIEW_META[activeView].subtitle, "model")}</div>
-    <div class="regional-view-tabs" role="tablist" aria-label="部位ごとの負荷傾向指数の比較基準">${allowedViews.map((viewId) => `<button id="regional-tab-${escapeHtml(viewId)}" type="button" role="tab" aria-selected="${activeView === viewId ? "true" : "false"}" aria-controls="regional-panel-${escapeHtml(viewId)}" tabindex="${activeView === viewId ? "0" : "-1"}" data-regional-view="${escapeHtml(viewId)}">${escapeHtml(VIEW_META[viewId].label)}</button>`).join("")}</div>
+    <div class="result-card__heading"><div><p>部位ごとの比較表示</p><h2 id="distribution-title">部位ごとの相対比較値</h2></div>${renderStatusLabel(VIEW_META[activeView].subtitle, "model")}</div>
+    <div class="regional-view-tabs" role="tablist" aria-label="部位ごとの相対比較値の比較基準">${allowedViews.map((viewId) => `<button id="regional-tab-${escapeHtml(viewId)}" type="button" role="tab" aria-selected="${activeView === viewId ? "true" : "false"}" aria-controls="regional-panel-${escapeHtml(viewId)}" tabindex="${activeView === viewId ? "0" : "-1"}" data-regional-view="${escapeHtml(viewId)}">${escapeHtml(VIEW_META[viewId].label)}</button>`).join("")}</div>
     <p class="regional-view-announcement visually-hidden" aria-live="polite" data-regional-view-announcement>${escapeHtml(VIEW_META[activeView].label)}</p>
     ${allowedViews.map((viewId) => renderViewPanel(resultRecord, viewId, activeView)).join("")}
     <details class="regional-claim-boundary"><summary>この表示で言えること・言えないこと</summary><div><p>坂道、走行ペース、歩数、路面が変わると、身体の使われ方も変わることが先行研究で報告されています。この表示は、その知見と今回の記録を照らして見るための参考です。</p><p>筋肉・腱・関節に加わった実際の力、身体全体の配分、障害の有無や発生確率、走行してよいかどうかは示しません。</p></div></details>

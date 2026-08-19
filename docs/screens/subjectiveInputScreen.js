@@ -162,7 +162,7 @@ export function renderSubjectiveInputScreen({ context }) {
       title: "身体の記録を入力",
       description: "結果画面と同じ12部位の身体図から気になる場所を選び、必要な場合だけその他の場所を追加します。",
     })}
-    <div class="safety-notice subjective-boundary-notice"><strong>本人の身体記録と数値結果は分けて保存します。</strong><p>身体図から選ぶ部位と程度は、本人が感じた内容の記録です。12部位の指数とは別に表示し、診断や走行可否の判定には使いません。</p></div>
+    <div class="safety-notice subjective-boundary-notice"><strong>本人の身体記録と数値結果は分けて保存します。</strong><p>身体図から選ぶ部位と程度は、本人が感じた内容の記録です。12部位の条件応答とは別に表示し、診断や走行可否の判定には使いません。</p></div>
     <form id="subjective-input-form" class="record-form subjective-input-form" data-return-to="${escapeHtml(returnTo)}" novalidate>
       <div class="form-messages" data-form-messages tabindex="-1" hidden></div>
       <section class="form-section" aria-labelledby="subjective-status-title"><div class="section-heading"><p>1. 入力状態</p><h2 id="subjective-status-title">今回の身体記録</h2></div><p class="section-introduction">入力しないまま保存できます。未入力を「特になし」へ置き換えません。</p>

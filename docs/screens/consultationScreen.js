@@ -38,38 +38,36 @@ function modeLink(mode, current, label, description, enabled, parameters = {}) {
   return `<a class="consult-mode-link${mode === current ? " is-current" : ""}" href="#/consultation?${query}"${mode === current ? ' aria-current="page"' : ""}><strong>${escapeHtml(label)}</strong><small>${escapeHtml(description)}</small></a>`;
 }
 
-function reportFormatLink(format, current, label, description, recordId, regionId, viewId) {
+function reportFormatLink(format, current, label, description, recordId, regionId) {
   const query = new URLSearchParams({
     page: "report",
     mode: "result",
     recordId,
     format,
     regionId,
-    viewId,
   }).toString();
   return `<a class="share-format-card${format === current ? " is-current" : ""}" href="#/consultation?${query}"${format === current ? ' aria-current="page"' : ""}><strong>${escapeHtml(label)}</strong><small>${escapeHtml(description)}</small></a>`;
 }
 
-function purposeLink(item, current, recordId, regionId, viewId, a4RegionId) {
+function purposeLink(item, current, recordId, regionId, a4RegionId) {
   const query = new URLSearchParams({
     page: "quick",
     mode: "result",
     recordId,
     purpose: item.id,
     regionId,
-    viewId,
     a4RegionId,
   }).toString();
   return `<a class="consult-purpose-link${item.id === current ? " is-current" : ""}" href="#/consultation?${query}"${item.id === current ? ' aria-current="page"' : ""}><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.description)}</small></a>`;
 }
 
-function renderPurposeNavigation({ services, decision, experience, regionId, viewId }) {
-  return `<section class="consult-purpose-selector" aria-labelledby="consult-purpose-title"><div class="section-heading"><p>2. 相談の目的</p><h2 id="consult-purpose-title">何を確認したいですか</h2></div><div class="consult-purpose-grid">${services.consultation.purposes.map((item) => purposeLink(item, decision.purpose, experience.record.id, regionId, viewId, decision.regionId)).join("")}</div></section>`;
+function renderPurposeNavigation({ services, decision, experience, regionId }) {
+  return `<section class="consult-purpose-selector" aria-labelledby="consult-purpose-title"><div class="section-heading"><p>2. 相談の目的</p><h2 id="consult-purpose-title">何を確認したいですか</h2></div><div class="consult-purpose-grid">${services.consultation.purposes.map((item) => purposeLink(item, decision.purpose, experience.record.id, regionId, decision.regionId)).join("")}</div></section>`;
 }
 
 function renderA4RegionSelector(decision) {
   const options = decision.regionOptions.map((item) => `<option value="${escapeHtml(item.id)}"${item.id === decision.regionId ? " selected" : ""}>${escapeHtml(item.label)}</option>`).join("");
-  return `<section class="consult-region-selector" aria-labelledby="consult-region-title"><div class="section-heading section-heading--compact"><p>3. 部位</p><h2 id="consult-region-title">確認する部位を1つ選ぶ</h2></div><label class="field"><span>確認する部位</span><select data-consult-region-selector>${options}</select><small>部位間の順位付けではありません。選んだ部位を、その部位固有の基準100と比較します。</small></label></section>`;
+  return `<section class="consult-region-selector" aria-labelledby="consult-region-title"><div class="section-heading section-heading--compact"><p>3. 部位</p><h2 id="consult-region-title">確認する部位を1つ選ぶ</h2></div><label class="field"><span>確認する部位</span><select data-consult-region-selector>${options}</select><small>部位間の順位付けではありません。選んだ部位で条件応答を数値化できる場合だけ、その部位固有の基準100と比較します。</small></label></section>`;
 }
 
 function renderDecisionSources(decision) {
@@ -120,19 +118,19 @@ function renderConditionNotice(report) {
   return `<section class="safety-notice"><h2>本人が選択した体調情報</h2><ul>${report.conditionFlags.map((flag) => `<li>${escapeHtml(SAFETY_FLAG_LABELS[flag] || flag)}</li>`).join("")}</ul><p>アプリの数値結果による判定ではなく、本人入力としてそのまま共有します。</p></section>`;
 }
 
-function renderResultQuick({ services, experience, regionId, viewId, purpose, a4RegionId }) {
+function renderResultQuick({ services, experience, regionId, purpose, a4RegionId }) {
   const allExperiences = services.workflows.records.loadAllExperiences();
-  const report = services.consultation.buildConsultationReport(
-    experience,
-    allExperiences,
-    { regionId, viewId },
-  );
   const decision = services.consultation.buildDeterministicConsultation({
     experience,
     allExperiences,
     purpose,
     regionId: a4RegionId,
   });
+  const report = services.consultation.buildConsultationReport(
+    experience,
+    allExperiences,
+    { regionId: decision.regionId || regionId },
+  );
   const priority = report.supportRoute === "consult" || report.supportRoute === "urgent";
   const reportQuery = new URLSearchParams({
     page: "report",
@@ -140,10 +138,9 @@ function renderResultQuick({ services, experience, regionId, viewId, purpose, a4
     recordId: experience.record.id,
     format: "standard",
     regionId: report.modelReference.regional.regionId,
-    viewId: report.modelReference.regional.viewId,
   }).toString();
   const reportAction = priority
-    ? `<section class="consult-priority-report"><div><p>${report.supportRoute === "urgent" ? "公的な案内とは別に作る資料" : "本人入力を先に確認する資料"}</p><h2>${report.supportRoute === "urgent" ? "相談用レポートも準備する" : "相談用レポートを優先"}</h2><p>本人入力、今回の条件、100の意味を明記した数値表示の順でまとめます。公的な窓口の確認を置き換える資料ではありません。</p></div><a class="button button--primary" href="#/consultation?${reportQuery}">相談用レポートを開く</a></section>`
+    ? `<section class="consult-priority-report"><div><p>${report.supportRoute === "urgent" ? "公的な案内とは別に作る資料" : "本人入力を先に確認する資料"}</p><h2>${report.supportRoute === "urgent" ? "相談用レポートも準備する" : "相談用レポートを優先"}</h2><p>本人入力、今回の条件、部位の条件応答の順でまとめます。数値化できる場合は基準100の意味も明記します。公的な窓口の確認を置き換える資料ではありません。</p></div><a class="button button--primary" href="#/consultation?${reportQuery}">相談用レポートを開く</a></section>`
     : "";
   const comparisonNotice = decision.purpose === "previous_comparison" && decision.regional.previousComparable?.status !== "COMPARABLE"
     ? `<aside class="editorial-boundary"><p>同じ部位・同じ基準など、同じ意味で比べられる過去記録がないため、差は表示せず、その理由をメモへ記載します。</p></aside>`
@@ -152,12 +149,12 @@ function renderResultQuick({ services, experience, regionId, viewId, purpose, a4
     ${renderExperienceSource(experience, report.supportRoute)}
     ${renderConditionNotice(report)}
     ${reportAction}
-    ${renderPurposeNavigation({ services, decision, experience, regionId, viewId })}
+    ${renderPurposeNavigation({ services, decision, experience, regionId: decision.regionId })}
     ${renderA4RegionSelector(decision)}
     ${comparisonNotice}
     ${renderDecisionSources(decision)}
     ${renderEditableMemo({ key: `result:${experience.record.id}:${decision.purpose}:${decision.regionId}`, originalText: decision.memo, title: "目的別の相談メモ", help: "保存した内容から作った下書きです。必要な範囲だけ残し、自分の言葉へ直して使います。" })}
-    <aside class="editorial-boundary"><p>この機能は診断、障害予測、原因特定、走行可否、練習処方、安全保証を行いません。保存済みの部位別数値も変更しません。</p></aside>
+    <aside class="editorial-boundary"><p>この機能は診断、障害予測、原因特定、走行可否、練習処方、安全保証を行いません。保存済みの部位別結果も変更しません。</p></aside>
   </section>`;
 }
 
@@ -191,9 +188,9 @@ function renderConsultationHub({ experience, plan }) {
   </section>`;
 }
 
-function renderQuickPage({ services, experience, plan, mode, regionId, viewId, purpose, a4RegionId }) {
+function renderQuickPage({ services, experience, plan, mode, regionId, purpose, a4RegionId }) {
   const body = mode === "result" && experience
-    ? renderResultQuick({ services, experience, regionId, viewId, purpose, a4RegionId })
+    ? renderResultQuick({ services, experience, regionId, purpose, a4RegionId })
     : mode === "plan" && plan
       ? renderPlanQuick(services, plan)
       : renderFreeQuick();
@@ -206,12 +203,11 @@ function renderQuickPage({ services, experience, plan, mode, regionId, viewId, p
   </section>`;
 }
 
-function renderReportPage({ services, experience, format, regionId, viewId }) {
+function renderReportPage({ services, experience, format, regionId }) {
   const presentation = buildReportPresentation({
     services,
     experience,
     regionId,
-    viewId,
   });
   const { report } = presentation;
   const priority = report.supportRoute === "consult" || report.supportRoute === "urgent";
@@ -223,7 +219,7 @@ function renderReportPage({ services, experience, format, regionId, viewId }) {
     <div class="report-screen-tools">
       ${renderExperienceSource(experience, report.supportRoute)}
       ${renderConditionNotice(report)}
-      <section aria-labelledby="report-format-title"><div class="section-heading"><p>1. 資料の種類</p><h2 id="report-format-title">資料の種類を選ぶ</h2></div><div class="share-format-picker">${reportFormatLink("standard", format, "標準資料", "今回の記録を短くまとめます。", experience.record.id, presentation.selectedRegionId, presentation.selectedViewId)}${reportFormatLink("detailed", format, "詳細資料", "最近の流れも添えます。", experience.record.id, presentation.selectedRegionId, presentation.selectedViewId)}</div></section>
+      <section aria-labelledby="report-format-title"><div class="section-heading"><p>1. 資料の種類</p><h2 id="report-format-title">資料の種類を選ぶ</h2></div><div class="share-format-picker">${reportFormatLink("standard", format, "標準資料", "今回の記録を短くまとめます。", experience.record.id, presentation.selectedRegionId)}${reportFormatLink("detailed", format, "詳細資料", "最近の流れも添えます。", experience.record.id, presentation.selectedRegionId)}</div></section>
       <section class="report-print-actions" aria-labelledby="report-print-title"><div><p>2. 出力</p><h2 id="report-print-title">${escapeHtml(documentTitle)}</h2><p>必要な内容をまとめた資料を開きます。</p></div><div class="screen-actions"><button class="button button--primary" type="button" data-action="print-consultation-report">印刷・PDFを開く</button><button class="button button--secondary" type="button" data-action="copy-consultation-report">本文をコピー</button></div></section>
     </div>
     <textarea id="consultation-report-text" class="report-copy-source" readonly tabindex="-1" aria-hidden="true">${escapeHtml(copyText)}</textarea>
@@ -253,7 +249,6 @@ export function renderConsultationScreen({ services, context }) {
     : ["standard", "detailed"].includes(legacyView) ? legacyView : "standard";
   const requestedPage = context.parameters.get("page") || "";
   const regionId = context.parameters.get("regionId") || "";
-  const viewId = context.parameters.get("viewId") || "";
   const purpose = context.parameters.get("purpose") || "";
   const a4RegionId = context.parameters.get("a4RegionId") || "";
   const reportPage = Boolean(experience) && mode === "result" && (requestedPage === "report" || ["standard", "detailed"].includes(legacyView));
@@ -264,7 +259,6 @@ export function renderConsultationScreen({ services, context }) {
     experience,
     format,
     regionId,
-    viewId,
   });
   if (quickPage) return renderQuickPage({
     services,
@@ -272,7 +266,6 @@ export function renderConsultationScreen({ services, context }) {
     plan,
     mode,
     regionId,
-    viewId,
     purpose,
     a4RegionId,
   });

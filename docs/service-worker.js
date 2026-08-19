@@ -1,4 +1,4 @@
-const CACHE_NAME = "runload-journal-current-v1-5-1-20260807-cache-a6-r31-v3-3r31";
+const CACHE_NAME = "runload-journal-current-v1-5-1-20260807-cache-a8-1d-candidate-v1-2";
 const PRECACHE_URLS = [
   "./app.js",
   "./core/applicationServices.js",

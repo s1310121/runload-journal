@@ -56,6 +56,11 @@ function regionalSections(course = {}) {
       shareBasis: "DISTANCE",
       shareValue: distanceKm > 0 ? distanceKm : sharePercent,
       distanceKm: distanceKm > 0 ? distanceKm : null,
+      durationMinutes: Number(section.durationMinutes) > 0 ? Number(section.durationMinutes) : null,
+      steps: section.steps != null && Number.isInteger(Number(section.steps)) && Number(section.steps) >= 0 ? Number(section.steps) : null,
+      speedMps: Number(section.speedMps) > 0 ? Number(section.speedMps) : null,
+      cadenceSpm: Number(section.cadenceSpm) > 0 ? Number(section.cadenceSpm) : null,
+      sharePercent: sharePercent > 0 ? sharePercent : null,
       gradeDirection,
       gradePercent: grade == null || !Number.isFinite(grade) ? null : Math.abs(grade),
     }];

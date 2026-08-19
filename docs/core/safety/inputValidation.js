@@ -138,6 +138,10 @@ function normalizeCourse(rawCourse = {}, rawRecord = {}) {
       const sharePercent = rawShare == null ? null : toFiniteNumber(rawShare, Number.NaN);
       const rawGrade = firstDefined(item.gradePercent, item.grade_pct);
       const signedGrade = rawGrade == null ? null : toFiniteNumber(rawGrade, Number.NaN);
+      const durationMinutes = toFiniteNumber(firstDefined(item.durationMinutes, item.duration_minutes), Number.NaN);
+      const steps = toFiniteNumber(item.steps, Number.NaN);
+      const speedMps = toFiniteNumber(firstDefined(item.speedMps, item.speed_mps), Number.NaN);
+      const cadenceSpm = toFiniteNumber(firstDefined(item.cadenceSpm, item.cadence_spm), Number.NaN);
       const rawDirection = String(item.gradeDirection || "").toUpperCase();
       const gradeDirection = ["UPHILL", "DOWNHILL", "FLAT", "UNKNOWN"].includes(rawDirection)
         ? rawDirection
@@ -162,6 +166,10 @@ function normalizeCourse(rawCourse = {}, rawRecord = {}) {
         sectionId: normalizeSingleLineText(item.sectionId, 80) || `section-${index + 1}`,
         sharePercent: Number.isFinite(sharePercent) ? sharePercent : null,
         distanceKm: Number.isFinite(distanceKm) ? distanceKm : null,
+        durationMinutes: Number.isFinite(durationMinutes) && durationMinutes > 0 ? durationMinutes : null,
+        steps: Number.isInteger(steps) && steps >= 0 ? steps : null,
+        speedMps: Number.isFinite(speedMps) && speedMps > 0 ? speedMps : null,
+        cadenceSpm: Number.isFinite(cadenceSpm) && cadenceSpm > 0 ? cadenceSpm : null,
         gradeDirection,
         gradePercent,
         surfaceClass: normalizeSingleLineText(firstDefined(item.surfaceClass, item.surface_class), 80) || normalized.modelSurfaceClass,

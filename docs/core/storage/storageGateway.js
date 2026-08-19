@@ -209,7 +209,7 @@ export function createStorageGateway(storage) {
   }
 
   function probe() {
-    const probeKey = "runner-load-app-storage-probe";
+    const probeKey = "runner-load-a7-final-candidate-v1-storage-probe";
     const snapshot = captureSnapshot([probeKey]);
     if (!snapshot.ok) return snapshot;
     const value = `storage-probe-${Date.now()}`;

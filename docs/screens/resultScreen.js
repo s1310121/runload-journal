@@ -20,7 +20,7 @@ import { RESULT_DISPLAY_MODE_OPTIONS, normalizeJournalSettings } from "../ui/app
 import { renderV27TotalCard } from "../ui/v27ResultPresentation.js";
 import { renderRegionalV1Card } from "../ui/regionalV1Presentation.js";
 import { renderResultWorkspaceNavigation } from "../ui/screenArchitecture.js";
-import { buildRegionalV1PreviousComparableMap } from "../core/model/regionalV1/regionalV1ResultService.js";
+import { buildA7ConditionPreviousComparableMap } from "../core/model/regionalV1/regionalV1ResultService.js";
 import { reportedRpeValue } from "../core/safety/rpeProvenance.js";
 import { bodyAreaLateralityLabel } from "../core/model/v27/bodyAreaTaxonomy.js";
 
@@ -126,7 +126,7 @@ function renderSubjectiveFeedback(feedback = {}, record = {}, experiences = []) 
     ${activeFlags.length ? `<div class="safety-flag-summary"><h3>体調確認で選んだ内容</h3><ul>${activeFlags.map(([flag]) => `<li>${escapeHtml(SAFETY_FLAG_LABELS[flag] || flag)}</li>`).join("")}</ul></div>` : ""}
     ${feedback?.unexpectedSymptom ? '<p class="notice-text">「いつもと違う、説明しにくい症状がある」と入力されています。</p>' : ""}
     ${feedback?.consultationNote ? `<div class="consultation-note"><h3>コーチや指導者へ伝えたいこと</h3><p>${escapeHtml(feedback.consultationNote).replaceAll("\n", "<br>")}</p></div>` : ""}
-    <p class="source-boundary">ここは本人が入力した記録です。部位ごとの負荷傾向指数とは分けて表示し、改善・悪化を自動判定しません。</p>
+    <p class="source-boundary">ここは本人が入力した記録です。部位ごとの条件応答とは分けて表示し、改善・悪化を自動判定しません。</p>
   </section>`;
 }
 
@@ -138,7 +138,7 @@ function renderLegacyResultCard() {
 }
 
 function renderRestRegionalCard() {
-  return `<section class="result-card result-card--distribution" data-information-role="model" aria-labelledby="distribution-title"><div class="result-card__heading"><div><p>12部位の比較表示</p><h2 id="distribution-title">部位ごとの負荷傾向指数</h2></div>${renderStatusLabel("休養記録", "neutral")}</div><div class="rest-distribution"><p>休養日には走行事実に基づく部位ごとの負荷傾向指数を作成しません。</p></div></section>`;
+  return `<section class="result-card result-card--distribution" data-information-role="model" aria-labelledby="distribution-title"><div class="result-card__heading"><div><p>12部位の条件応答</p><h2 id="distribution-title">部位ごとの条件応答</h2></div>${renderStatusLabel("休養記録", "neutral")}</div><div class="rest-distribution"><p>休養日には走行条件に基づく部位ごとの条件応答を作成しません。</p></div></section>`;
 }
 
 function renderPrioritySupportAction(experience) {
@@ -170,7 +170,7 @@ function renderResultReadingSummary(experience, mode, hasSubjectiveCard = true) 
   const items = {
     record: { href: "#record-facts-title", title: "今回の記録条件" },
     total: { href: "#recent-comparison-title", title: "走行全体の比較用推定値" },
-    regional: { href: "#distribution-title", title: "部位ごとの負荷傾向指数" },
+    regional: { href: "#distribution-title", title: "部位ごとの条件応答" },
     subjective: { href: hasSubjectiveCard ? "#subjective-feedback" : "#result-subjective-followup-title", title: "本人が残した身体記録" },
     next: { href: "#result-activation-title", title: "この結果を次に活かす" },
   };
@@ -207,10 +207,10 @@ function renderResultActivationHub(experience, observationCandidate = null) {
 function renderResultGuide() {
   return renderScreenGuide({
     id: "result-guide",
-    summary: "保存した事実、走行全体の比較用推定値、部位ごとの負荷傾向指数の読み分けを確認できます。",
+    summary: "保存した事実、走行全体の比較用推定値、部位ごとの条件応答と共通走行量の読み分けを確認できます。",
     sections: [
-      { title: "まずここでやること", body: "今回の記録、部位ごとの指数、走行全体の過去記録との比較を順に見返します。" },
-      { title: "部位の表示", body: "12部位それぞれを、その部位固有の表示上の基準100と比較して数値表示します。部位間ランキングではありません。" },
+      { title: "まずここでやること", body: "今回の記録、部位ごとの条件応答、走行全体の過去記録との比較を順に見返します。" },
+      { title: "部位の表示", body: "12部位を固定順で確認します。条件応答を根拠に基づいて数値化できる部位だけ、その部位固有の表示上の基準100と比較して表示し、数値化できない部位は「数値なし」と表示します。部位間ランキングはしません。" },
       { title: "走行全体の比較用推定値", body: "走った量とコース条件をまとめた参考値を、同じ意味で比べられる過去記録の中央値と小型グラフで見返します。高低は良し悪しを示しません。" },
     ],
     tutorialId: "result",
@@ -254,7 +254,7 @@ export function renderResultScreen({ services, context }) {
     ? renderV27TotalCard({ resultRecord: v27ResultRecord, comparison })
     : renderLegacyResultCard(experience);
   const previousComparisons = regionalV1ResultRecord
-    ? buildRegionalV1PreviousComparableMap({ currentExperience: experience, experiences: allExperiences })
+    ? buildA7ConditionPreviousComparableMap({ currentExperience: experience, experiences: allExperiences })
     : {};
   const regionalInitialView = settings.regionalResultInitialView === "remember"
     ? settings.regionalResultLastView
@@ -274,7 +274,7 @@ export function renderResultScreen({ services, context }) {
     record: recordCard,
     personal: personalContextCard,
     subjective: subjectiveCard,
-    modelBoundary: `<aside class="safety-notice model-family-boundary" aria-label="2つの表示の区別"><p><strong>2つの見方を分けて表示しています。</strong> 走行全体の比較用推定値と、12部位の負荷傾向指数は意味が異なります。同じ数値として比べず、部位どうしも順位付けしません。</p></aside>`,
+    modelBoundary: `<aside class="safety-notice model-family-boundary" aria-label="2つの表示の区別"><p><strong>2つの見方を分けて表示しています。</strong> 走行全体の比較用推定値と、12部位の条件応答は意味が異なります。同じ数値として比べず、部位どうしも順位付けしません。部位別表示では共通走行量も条件応答とは分けて示します。</p></aside>`,
     total: totalCard,
     regional: regionalCard,
     compactDetails: renderCompactResultDetails({ recordCard, personalContextCard, subjectiveCard }),

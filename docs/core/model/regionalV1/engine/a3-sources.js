@@ -11,10 +11,25 @@ export const JOINT_GRADE_SOURCE = Object.freeze({
   gradeDegrees: [-5.71, -2.86, 0, 2.86, 5.71],
   regions: Object.freeze({
     "BA-DISP-014": Object.freeze({
-      endpoint: "hip joint mechanical work route: absolute negative power for decline and positive power for incline, each normalized to its level value",
-      rawValuesWPerKg: [0.37, 0.29, 0.15, 1.39, 1.63],
-      rawReferenceValuesWPerKg: { declineNegativeMagnitude: 0.15, inclinePositive: 1.02 },
-      ratios: [2.466666666666667, 1.933333333333333, 1, 1.362745098039216, 1.598039215686275],
+      endpoint: "project-derived hip total absolute joint mechanical power (source positive average power plus magnitude of source negative average power), normalized to level",
+      aggregationRule: "SOURCE_POSITIVE_AVERAGE_POWER_PLUS_ABSOLUTE_SOURCE_NEGATIVE_AVERAGE_POWER; same-source derived scalar retained consistently across all Nuckols grades",
+      rawValuesWPerKg: Object.freeze([1.12, 1.20, 1.17, 1.55, 1.84]),
+      rawReferenceValueWPerKg: 1.17,
+      ratios: Object.freeze([0.9572649572649573, 1.0256410256410255, 1, 1.3247863247863247, 1.5726495726495726]),
+      endpointFamilies: Object.freeze({
+        totalAbsolutePower: Object.freeze({
+          familyId: "NUCKOLS_HIP_TOTAL_ABSOLUTE_POWER",
+          routeId: "A8_NUCKOLS_HIP_TOTAL_ABSOLUTE_POWER",
+          referenceDefinitionId: "RCM-RDEF-014-NUCKOLS-HIP-TOTAL-ABSOLUTE-POWER",
+          endpoint: "hip total absolute average mechanical power: positive average power plus magnitude of negative average power",
+          signConvention: "positive and negative source components remain separately traceable; scalar is their within-grade absolute sum before normalization",
+          gradePercent: Object.freeze([-10, -5, 0, 5, 10]),
+          rawValuesWPerKg: Object.freeze([1.12, 1.20, 1.17, 1.55, 1.84]),
+          rawReferenceValueWPerKg: 1.17,
+          ratios: Object.freeze([0.9572649572649573, 1.0256410256410255, 1, 1.3247863247863247, 1.5726495726495726]),
+          derivationStatus: "PROJECT_DERIVED_WITHIN_SOURCE_FROM_REPORTED_POSITIVE_AND_NEGATIVE_HIP_AVERAGE_POWER",
+        }),
+      }),
       coverageState: "FULL",
       sourceAnchorRange: "RCM-ANCH-A3-001..005",
     }),
@@ -77,14 +92,6 @@ export const A6_NUCKOLS_REGIONAL_GRADE_PROXY_SOURCE = Object.freeze({
   gradePercent: Object.freeze([-10, -5, 0, 5, 10]),
   gradeDegrees: Object.freeze([-5.71, -2.86, 0, 2.86, 5.71]),
   regions: Object.freeze({
-    "BA-DISP-015": Object.freeze({
-      endpoint: "project-derived hip total absolute joint mechanical power (source positive average power plus magnitude of source negative average power); gluteal functional-demand proxy",
-      aggregationRule: "SOURCE_POSITIVE_AVERAGE_POWER_PLUS_ABSOLUTE_SOURCE_NEGATIVE_AVERAGE_POWER; within-source derived proxy, not a source-reported gluteal endpoint",
-      rawValuesWPerKg: Object.freeze([1.12, 1.20, 1.17, 1.55, 1.84]),
-      ratios: Object.freeze([0.9572649572649573, 1.0256410256410255, 1, 1.3247863247863247, 1.5726495726495726]),
-      observedComponentIds: Object.freeze(["HIP_TOTAL_ABSOLUTE_JOINT_POWER_PROXY"]),
-      missingComponentIds: Object.freeze(["DIRECT_GLUTEUS_MAXIMUS_FORCE", "DIRECT_GLUTEUS_MEDIUS_FORCE", "DIRECT_TISSUE_LOAD"]),
-    }),
     "BA-DISP-023": Object.freeze({
       endpoint: "project-derived ankle total absolute joint mechanical power (source positive average power plus magnitude of source negative average power); posterior-lower-leg/plantar-flexor functional-demand proxy",
       aggregationRule: "SOURCE_POSITIVE_AVERAGE_POWER_PLUS_ABSOLUTE_SOURCE_NEGATIVE_AVERAGE_POWER; within-source derived proxy, not a source-reported soleus/gastrocnemius endpoint",

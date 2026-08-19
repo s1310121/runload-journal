@@ -1,6 +1,7 @@
 import { FORMAL_INPUT_CATALOG, REGIONS } from "../model/regionalV1/engine/data.js";
 import {
-  buildRegionalV1PreviousComparable,
+  buildA7ConditionPreviousComparable,
+  buildA7RegionSemanticDecomposition,
   regionalV1CoverageMeta,
   regionalV1EndpointMeta,
   regionalV1ExposureMeta,
@@ -137,9 +138,9 @@ function resultStateLabel(value = "") {
 function comparisonReason(value = "") {
   return {
     COMPARABLE: "前の比較可能記録があります",
-    NO_COMPARABLE_RECORD: "同じ意味で比べられる過去記録はありません",
-    NO_PREVIOUS_RECORD: "前の走行記録はありません",
-    CURRENT_NOT_CALCULABLE: "今回の部位値を表示できません",
+    NO_COMPARABLE_CONDITION_RECORD: "同じ条件応答として比べられる過去記録はありません",
+    NO_PREVIOUS_CONDITION_RECORD: "前の条件応答記録はありません",
+    CURRENT_CONDITION_UNAVAILABLE: "今回の条件応答を数値化できません",
   }[String(value || "")] || "比較できる記録を確認できません";
 }
 
@@ -222,6 +223,7 @@ function regionalContext(experience, allExperiences, regionId) {
       displayDeltaPoints: null,
       endpoint: null,
       exposure: null,
+      semantic: null,
       coverage: null,
       contributors: Object.freeze([]),
       previousComparable: null,
@@ -230,8 +232,15 @@ function regionalContext(experience, allExperiences, regionId) {
   const endpoint = regionalV1EndpointMeta(row);
   const exposure = regionalV1ExposureMeta(row);
   const coverage = regionalV1CoverageMeta(row);
+  const semantic = experience?.regionalV1ResultRecord?.a7_region_semantics?.[regionId]
+    || buildA7RegionSemanticDecomposition(row);
+  const ratio = semantic?.regionalConditionResponse?.ratioExact;
+  const displayIndex = finite(ratio) && Number(ratio) > 0 ? Math.round(100 * Number(ratio)) : null;
+  const displayDeltaPoints = displayIndex === null ? null : displayIndex - 100;
+  const activeConditionRoutes = new Set(semantic?.regionalConditionResponse?.activeRouteIds || []);
   const contributors = (row.reasonTrace || [])
     .filter((event) => event.numericEffectApplied === true && finite(event.contributionLog))
+    .filter((event) => activeConditionRoutes.has(String(event.routeId || "")))
     .map((event) => Object.freeze({
       traceCode: String(event.traceCode || ""),
       label: contributorLabel(event, exposure),
@@ -240,20 +249,21 @@ function regionalContext(experience, allExperiences, regionId) {
       sourceIds: Object.freeze(unique(event.sourceIds || [])),
       parameterIds: Object.freeze(unique(event.parameterIds || [])),
     }));
-  const previousComparable = buildRegionalV1PreviousComparable({
+  const previousComparable = buildA7ConditionPreviousComparable({
     currentExperience: experience,
     experiences: allExperiences,
     regionId,
   });
   return Object.freeze({
-    state: row.calculationState || "CALCULATED",
+    state: semantic?.regionalConditionResponse?.status || "UNAVAILABLE",
     regionId,
     regionLabel: row.regionName || region?.name || "選択した部位",
     row,
-    displayIndex: finite(row.displayIndex) ? Number(row.displayIndex) : null,
-    displayDeltaPoints: finite(row.displayDeltaPoints) ? Number(row.displayDeltaPoints) : null,
+    displayIndex,
+    displayDeltaPoints,
     endpoint,
     exposure,
+    semantic,
     coverage,
     contributors: Object.freeze(contributors),
     previousComparable,
@@ -267,7 +277,7 @@ function sourceUseSummary({ purpose, dataSelection, bodyItems, regional, profile
     Object.freeze({ id: "audience", label: "相談相手", used: Boolean(audience), reason: audience ? "入力した相談相手" : "相談相手は未入力" }),
     Object.freeze({ id: "body", label: "本人の身体記録", used: selected.has("body-record") && bodyItems.length > 0, reason: selected.has("body-record") ? (bodyItems.length ? "本人が記録した内容" : "身体記録は未入力") : "共有対象から外しています" }),
     Object.freeze({ id: "course", label: "走行事実・コース", used: selected.has("course"), reason: selected.has("course") ? "今回の保存記録" : "共有対象から外しています" }),
-    Object.freeze({ id: "a4", label: "選択した部位の負荷傾向指数", used: selected.has("current-result") && regional.displayIndex !== null, reason: selected.has("current-result") ? (regional.displayIndex !== null ? "今回の部位結果" : "この記録では数値を表示できません") : "共有対象から外しています" }),
+    Object.freeze({ id: "a4", label: "選択した部位の条件応答", used: selected.has("current-result") && regional.displayIndex !== null, reason: selected.has("current-result") ? (regional.displayIndex !== null ? "今回の部位結果" : "この記録では数値を表示できません") : "共有対象から外しています" }),
     Object.freeze({ id: "history", label: "前の比較可能記録", used: purpose === "previous_comparison" && selected.has("current-result") && regional.previousComparable?.status === "COMPARABLE", reason: purpose === "previous_comparison" ? (selected.has("current-result") ? comparisonReason(regional.previousComparable?.status) : "共有対象から外しています") : "今回の目的には含めません" }),
     Object.freeze({ id: "profile", label: "シューズ・走り方の記録", used: selected.has("personal-note") && profileItems.length > 0, reason: selected.has("personal-note") ? (profileItems.length ? "本人が記録した内容" : "入力はありません") : "共有対象から外しています" }),
   ]);
@@ -281,7 +291,7 @@ function appendSection(lines, heading, items) {
 }
 
 function regionalCurrentLine(regional) {
-  if (regional.displayIndex === null) return `${regional.regionLabel}：数値なし（${resultStateLabel(regional.state)}）`;
+  if (regional.displayIndex === null) return `${regional.regionLabel}：条件応答の数値なし`;
   const delta = regional.displayDeltaPoints == null
     ? ""
     : regional.displayDeltaPoints === 0
@@ -297,15 +307,15 @@ function comparisonLines(regional) {
     const sign = comparison.percentChangeRounded > 0 ? "+" : "";
     return [
       `今回：${regionalCurrentLine(regional)}`,
-      `前の比較可能記録：${comparison.previous.date}／${comparison.previous.displayIndex}`,
+      `前の比較可能記録：${comparison.previous.date}／条件応答 ${comparison.previous.displayConditionIndex}`,
       `同じ意味で比べた変化：${sign}${comparison.percentChangeRounded}%`,
     ];
   }
-  if (comparison.status === "NO_COMPARABLE_RECORD") {
-    return ["過去記録はありますが、同じ部位・同じ基準など、同じ意味で比べられる記録がないため差を表示しません。"];
+  if (comparison.status === "NO_COMPARABLE_CONDITION_RECORD") {
+    return ["過去記録はありますが、同じ部位・同じ条件軸・同じ基準など、同じ条件応答として比べられる記録がないため差を表示しません。"];
   }
-  if (comparison.status === "NO_PREVIOUS_RECORD") return ["前の走行記録がないため、自分の過去記録との比較はまだ表示しません。"];
-  return ["今回の部位指数を表示できないため、自分の過去記録との比較は表示しません。"];
+  if (comparison.status === "NO_PREVIOUS_CONDITION_RECORD") return ["前の条件応答記録がないため、自分の過去記録との比較はまだ表示しません。"];
+  return ["今回の条件応答を数値化できないため、自分の過去記録との比較は表示しません。"];
 }
 
 function buildMemo({ purpose, record, feedback, audience, question, dataSelection, bodyItems, profileItems, regional }) {
@@ -324,10 +334,11 @@ function buildMemo({ purpose, record, feedback, audience, question, dataSelectio
   }
 
   if (selected.has("current-result") && regional.displayIndex !== null) {
-    appendSection(lines, "選択した部位の負荷傾向指数：", [
+    appendSection(lines, "選択した部位の条件応答：", [
       regionalCurrentLine(regional),
-      "この値の見方：この部位に関する研究上の傾向を、基準100と比べるための表示です。",
-      "数値は身体を直接測った値ではありません。",
+      "この値の見方：根拠付きで数値化できる今回の走行条件への応答を、この部位自身の基準100と比べる表示です。",
+      "共通走行量はこの条件応答へ足さず、別の情報として扱います。",
+      "100は安全値・正常値・初心者平均ではなく、数値は身体を直接測った値でもありません。",
     ]);
   }
 

@@ -76,7 +76,7 @@ function workspaceLink({ href, label, description, current = false }) {
 export function renderResultWorkspaceNavigation({ recordId = "", date = "", regionId = "", active = "overview" } = {}) {
   const items = [
     { key: "overview", href: route("result", { recordId }), label: "今回の結果", description: "事実・本人入力・比較表示" },
-    ...(regionId ? [{ key: "region", href: route("body-part-detail", { recordId, regionId }), label: "選択した部位", description: "この部位の知見と基準100" }] : []),
+    ...(regionId ? [{ key: "region", href: route("body-part-detail", { recordId, regionId }), label: "選択した部位", description: "この部位の条件応答と知見" }] : []),
     { key: "history", href: route("history", { view: "trends", period: 28, anchorDate: date, recordId, regionId }), label: "履歴・推移", description: regionId ? "同じ意味で比べられる記録" : "保存した記録を見返す" },
     { key: "notebook", href: route("notebook", { view: "day", date, source: "result", recordId }), label: "この日のノート", description: "本人の言葉を別に残す" },
   ];

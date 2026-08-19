@@ -29,6 +29,18 @@ function deriveRunSetting(surface) {
   return "OUTDOOR_ROUTE";
 }
 
+function approximatelyEqual(a,b,tolerance=1e-9){
+  return Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a-b)<=tolerance*Math.max(1,Math.abs(a),Math.abs(b));
+}
+
+function explicitSectionRepresentsWholeRun(section,sectionCount,wholeDistanceKm){
+  if(sectionCount!==1)return false;
+  if(Number.isFinite(section.distanceKm)&&Number.isFinite(wholeDistanceKm))return approximatelyEqual(section.distanceKm,wholeDistanceKm);
+  if(Number.isFinite(section.sharePercent))return approximatelyEqual(section.sharePercent,100);
+  if(section.shareBasis==="DISTANCE"&&Number.isFinite(section.shareValue)&&Number.isFinite(wholeDistanceKm))return approximatelyEqual(section.shareValue,wholeDistanceKm);
+  return false;
+}
+
 function buildSummarySections(ui, surface) {
   const distance = ui.distanceKm;
   const duration = ui.durationMinutes;
@@ -37,16 +49,22 @@ function buildSummarySections(ui, surface) {
   const cadence = steps != null && duration ? steps / duration : null;
   const course = ui.course ?? {};
   if (Array.isArray(course.sections) && course.sections.length) {
-    return course.sections.map((s,i)=>({
-      sectionId:s.sectionId ?? `section-${i+1}`, shareBasis:s.shareBasis ?? "DISTANCE", shareValue:s.shareValue ?? s.distanceKm ?? 1,
-      distanceKm:s.distanceKm ?? null, durationMinutes:s.durationMinutes ?? null, steps:s.steps ?? null,
-      speedMps:s.speedMps ?? (s.distanceKm && s.durationMinutes ? s.distanceKm*1000/(s.durationMinutes*60) : speed),
-      cadenceSpm:s.cadenceSpm ?? (s.steps && s.durationMinutes ? s.steps/s.durationMinutes : cadence),
-      gradeDirection:s.gradeDirection ?? "UNKNOWN", gradePercent:s.gradePercent ?? null,
-      runningFormat:s.runningFormat ?? ui.runningFormat ?? "UNKNOWN",
-      surfacePresetKeys:surface.components.map(c=>c.presetKey),
-      surfaceComponents:surface.components,
-    }));
+    const sectionCount=course.sections.length;
+    return course.sections.map((s,i)=>{
+      const homogeneousWholeRun=explicitSectionRepresentsWholeRun(s,sectionCount,distance);
+      const derivedSectionSpeed=s.distanceKm && s.durationMinutes ? s.distanceKm*1000/(s.durationMinutes*60) : null;
+      const derivedSectionCadence=s.steps!=null && s.durationMinutes ? s.steps/s.durationMinutes : null;
+      return {
+        sectionId:s.sectionId ?? `section-${i+1}`, shareBasis:s.shareBasis ?? "DISTANCE", shareValue:s.shareValue ?? s.distanceKm ?? 1,
+        distanceKm:s.distanceKm ?? null, durationMinutes:s.durationMinutes ?? null, steps:s.steps ?? null,
+        speedMps:Number.isFinite(s.speedMps) ? s.speedMps : (Number.isFinite(derivedSectionSpeed) ? derivedSectionSpeed : (homogeneousWholeRun ? speed : null)),
+        cadenceSpm:Number.isFinite(s.cadenceSpm) ? s.cadenceSpm : (Number.isFinite(derivedSectionCadence) ? derivedSectionCadence : (homogeneousWholeRun ? cadence : null)),
+        gradeDirection:s.gradeDirection ?? "UNKNOWN", gradePercent:s.gradePercent ?? null,
+        runningFormat:s.runningFormat ?? ui.runningFormat ?? "UNKNOWN",
+        surfacePresetKeys:surface.components.map(c=>c.presetKey),
+        surfaceComponents:surface.components,
+      };
+    });
   }
   const gradeKnowledge=course.gradeKnowledge ?? "UNKNOWN";
   if (gradeKnowledge === "KNOWN_SUMMARY") {
@@ -56,8 +74,10 @@ function buildSummarySections(ui, surface) {
     if (up>0) defs.push(["UPHILL",up,course.uphillGradePercent]);
     if (down>0) defs.push(["DOWNHILL",down,course.downhillGradePercent]);
     if (flat>0) defs.push(["FLAT",flat,0]);
+    const homogeneousWholeRun=defs.length===1&&approximatelyEqual(defs[0][1],100);
     return defs.map(([dir,share,g],i)=>({sectionId:`section-${i+1}`,shareBasis:"DISTANCE",shareValue:distance*share/100,
-      distanceKm:distance*share/100,durationMinutes:duration*share/100,steps:steps==null?null:Math.round(steps*share/100),speedMps:speed,cadenceSpm:cadence,
+      distanceKm:distance*share/100,durationMinutes:homogeneousWholeRun?duration:null,steps:homogeneousWholeRun?steps:null,
+      speedMps:homogeneousWholeRun?speed:null,cadenceSpm:homogeneousWholeRun?cadence:null,
       gradeDirection:dir,gradePercent:g??null,runningFormat:ui.runningFormat??"UNKNOWN",surfacePresetKeys:surface.components.map(c=>c.presetKey),surfaceComponents:surface.components}));
   }
   return [{sectionId:"section-1",shareBasis:"DISTANCE",shareValue:distance??1,distanceKm:distance??null,durationMinutes:duration??null,steps,

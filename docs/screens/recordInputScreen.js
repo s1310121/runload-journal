@@ -188,7 +188,7 @@ function renderRecoveryAndReflection(record = {}) {
   const consultation = record.consultationContext || {};
   const selectedData = new Set(Array.isArray(consultation.consultationDataSelection) ? consultation.consultationDataSelection : []);
   return `<div class="record-context-details">
-    <details class="record-optional-details"><summary><span><strong>睡眠・食事・生活背景</strong><small>本人の文脈として別に保存し、部位指数へ混ぜません。</small></span></summary><div class="field-grid field-grid--two record-optional-details__body">
+    <details class="record-optional-details"><summary><span><strong>睡眠・食事・生活背景</strong><small>本人の文脈として別に保存し、部位の条件応答へ混ぜません。</small></span></summary><div class="field-grid field-grid--two record-optional-details__body">
       <label class="field"><span>睡眠の自己記録</span><input name="sleepSummary" maxlength="160" value="${escapeHtml(recovery.sleepSummary || "")}" placeholder="例：よく眠れた、短かった"></label>
       <label class="field"><span>食事・水分の自己記録</span><input name="nutritionHydrationSummary" maxlength="160" value="${escapeHtml(recovery.nutritionHydrationSummary || "")}" placeholder="例：走る前に水分を取った"></label>
       <label class="field field--wide"><span>生活背景メモ</span><textarea name="lifestyleNote" maxlength="500" rows="3">${escapeHtml(recovery.lifestyleNote || "")}</textarea></label>

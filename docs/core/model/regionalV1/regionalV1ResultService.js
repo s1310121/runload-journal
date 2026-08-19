@@ -9,9 +9,10 @@ import { FORMAL_INPUT_CATALOG } from "./engine/data.js";
 import { hashCanonical } from "./engine/sha256.js";
 import { adaptStoredRecordToRegionalV1Ui, regionalV1ProfileContext } from "./regionalV1InputAdapter.js";
 
-export const REGIONAL_V1_MODEL_VERSION = "runload-regional-model-v1.1-a6-candidate";
+export const REGIONAL_V1_MODEL_VERSION = "runload-regional-model-v1.1-a8-1d-candidate-v1.2";
 export const REGIONAL_V1_ENGINE_BUILD = "runload-prototype-integration-v1.1-a6-candidate-trace1";
-export const REGIONAL_V1_OUTPUT_SEMANTIC_VERSION = "runload-regional-output-semantics-1.0";
+export const REGIONAL_V1_OUTPUT_SEMANTIC_VERSION = "runload-regional-output-semantics-1.1-a8-1d-candidate-v1.2";
+export const A7_SEMANTIC_DECOMPOSITION_VERSION = "runload-a8-1d-line-quality-0.2";
 
 const ENDPOINT_META = Object.freeze({
   HIP_JOINT_MECHANICAL_DEMAND_TENDENCY: Object.freeze({
@@ -132,6 +133,7 @@ const SOURCE_MATCHED_ROUTES = new Set([
   "ARCH_SURFACE_X_HEELED_SHOE",
   "ARCH_PFA_SOURCE",
   "A3_SRC_SUP_003_JOINT_GRADE",
+  "A8_NUCKOLS_HIP_TOTAL_ABSOLUTE_POWER",
   "A3_E04_GROUP_MEAN_CADENCE",
   "A3_E02_FIGURE_DIGITIZED_SPEED",
   "A3_BAT_SRC_009_VASTUS_EXACT",
@@ -149,6 +151,9 @@ const PROJECT_ROUTES = new Set([
   "A6_NUCKOLS_BOUNDED_GRADE_TRANSFER",
   "A6_BAT_SRC_019_LOCAL_GRADE_SPEED_ENVELOPE",
 ]);
+
+const A7_PHASE0_ACCEPTED_DIRECT_REGIONS = new Set(["BA-DISP-019", "BA-DISP-021", "BA-DISP-025"]);
+const A7_PHASE0_ACCEPTED_VAN_HOOREN_ROUTES = new Set(["DIRECT_SPEED_SOURCE", "DIRECT_GRADE_SOURCE"]);
 
 function hasContextValue(value) {
   if (Array.isArray(value)) return value.length > 0;
@@ -293,6 +298,105 @@ export function regionalV1ExposureMeta(row = {}) {
     qReference: finite(row.exposure?.qReference) ? Number(row.exposure.qReference) : null,
     alphaE: finite(row.exposure?.alphaE) ? Number(row.exposure.alphaE) : null,
   });
+}
+
+function expFromLog(value) {
+  return finite(value) ? Math.exp(Number(value)) : null;
+}
+
+function closeEnough(left, right, tolerance = 1e-10) {
+  return finite(left) && finite(right) && Math.abs(Number(left) - Number(right)) <= tolerance;
+}
+
+function a7Phase0NumericFamilyStatus(row = {}) {
+  const routes = uniqueSorted(row.activeRouteIds || []);
+  const acceptedRoutes = routes.filter((route) => A7_PHASE0_ACCEPTED_VAN_HOOREN_ROUTES.has(route));
+  if (A7_PHASE0_ACCEPTED_DIRECT_REGIONS.has(row.regionId) && acceptedRoutes.length > 0) {
+    return Object.freeze({
+      status: "PHASE0_ACCEPTED_VAN_HOOREN_1D",
+      acceptedRouteIds: Object.freeze(acceptedRoutes),
+      blockedExpansion: false,
+    });
+  }
+  return Object.freeze({
+    status: "CURRENT_ONLY_NO_NEW_A7_NUMERIC_FAMILY",
+    acceptedRouteIds: Object.freeze([]),
+    blockedExpansion: true,
+  });
+}
+
+/**
+ * A7 Phase 1 semantic separation. This deliberately does not change the
+ * Formal Current engine calculation. It exposes common exposure separately
+ * from a genuine regional condition response and never labels an unsupported
+ * condition as a neutral ratio of 1.
+ */
+export function buildA7RegionSemanticDecomposition(row = {}) {
+  const numericState = ["CALCULATED", "PARTIAL"].includes(row.calculationState);
+  const support = regionalV1ConditionSupportMeta(row);
+  const exposureMeta = regionalV1ExposureMeta(row);
+  const conditionSupported = numericState && support.status === "CONDITION_ROUTE_APPLIED";
+  const conditionLog = conditionSupported && finite(row.components?.conditionLog)
+    ? Number(row.components.conditionLog)
+    : null;
+  const conditionRatio = expFromLog(conditionLog);
+  const exposureLog = numericState && finite(row.components?.exposureLog)
+    ? Number(row.components.exposureLog)
+    : null;
+  const exposureRatio = expFromLog(exposureLog);
+  const currentIndex = numericState && finite(row.indexExact) ? Number(row.indexExact) : null;
+  const currentTotalLog = numericState && finite(row.components?.totalLog) ? Number(row.components.totalLog) : null;
+  const expectedCurrentIndex = currentTotalLog === null ? null : 100 * Math.exp(currentTotalLog);
+  const phase0Family = a7Phase0NumericFamilyStatus(row);
+
+  return Object.freeze({
+    semanticVersion: A7_SEMANTIC_DECOMPOSITION_VERSION,
+    regionId: row.regionId || null,
+    regionalConditionResponse: Object.freeze({
+      status: conditionSupported ? "SUPPORTED_NUMERIC" : numericState ? "UNSUPPORTED_NO_NUMERIC_MAGNITUDE" : "UNAVAILABLE",
+      supportStatus: support.status,
+      routeClass: routeClass(row),
+      ratioExact: conditionRatio,
+      deltaPercentExact: conditionRatio === null ? null : (conditionRatio - 1) * 100,
+      logRatioExact: conditionLog,
+      activeRouteIds: Object.freeze(uniqueSorted(row.activeRouteIds || [])),
+      sourceIds: Object.freeze(uniqueSorted(row.sourceIds || [])),
+      phase0NumericFamilyStatus: phase0Family.status,
+      phase0AcceptedRouteIds: phase0Family.acceptedRouteIds,
+      broadA7ExpansionBlocked: phase0Family.blockedExpansion,
+    }),
+    commonRunningExposure: Object.freeze({
+      status: exposureRatio === null ? "UNAVAILABLE" : "NUMERIC",
+      basis: exposureMeta.basis,
+      ratioExact: exposureRatio,
+      logRatioExact: exposureLog,
+      qEquivalent: exposureMeta.qEquivalent,
+      qReference: exposureMeta.qReference,
+      alphaE: exposureMeta.alphaE,
+      fallbackStatus: exposureMeta.fallbackStatus,
+    }),
+    currentCumulativeResult: Object.freeze({
+      status: currentIndex === null ? "UNAVAILABLE" : "NUMERIC",
+      indexExact: currentIndex,
+      referenceValue: row.referenceValue ?? 100,
+      totalLogExact: currentTotalLog,
+      arithmeticIdentityVerified: currentIndex === null || expectedCurrentIndex === null
+        ? null
+        : closeEnough(currentIndex, expectedCurrentIndex),
+      interpretation: conditionSupported
+        ? "CURRENT_INDEX_COMBINES_REGIONAL_CONDITION_AND_COMMON_EXPOSURE"
+        : numericState
+          ? "CURRENT_INDEX_IS_EXPOSURE_ONLY_BECAUSE_REGIONAL_CONDITION_MAGNITUDE_IS_UNSUPPORTED"
+          : "CURRENT_INDEX_UNAVAILABLE",
+    }),
+  });
+}
+
+export function buildA7SemanticDecompositionMap(result = {}) {
+  return Object.freeze(Object.fromEntries((result?.regions || []).map((row) => [
+    row.regionId,
+    buildA7RegionSemanticDecomposition(row),
+  ])));
 }
 
 export function regionalV1CoverageMeta(row = {}) {
@@ -470,6 +574,237 @@ export function compareRegionalV1Signatures(current, candidate) {
   });
 }
 
+
+function a7SemanticFor(resultRecord = {}, rowOrRegionId = null) {
+  const result = resultRecord?.result || resultRecord;
+  const regionId = typeof rowOrRegionId === "string" ? rowOrRegionId : rowOrRegionId?.regionId;
+  if (!regionId) return null;
+  const stored = resultRecord?.a7_region_semantics?.[regionId];
+  if (stored && typeof stored === "object") return Object.freeze(clone(stored));
+  const row = typeof rowOrRegionId === "string"
+    ? result?.regions?.find((item) => item.regionId === rowOrRegionId)
+    : rowOrRegionId;
+  return row ? buildA7RegionSemanticDecomposition(row) : null;
+}
+
+function a7ConditionIndexExact(semantic = null) {
+  const ratio = semantic?.regionalConditionResponse?.ratioExact;
+  return finite(ratio) && Number(ratio) > 0 ? 100 * Number(ratio) : null;
+}
+
+function a7ConditionRouteFamilySignature(semantic = null) {
+  const routes = uniqueSorted(semantic?.regionalConditionResponse?.activeRouteIds || []);
+  return routes.length ? routes.join("|") : null;
+}
+
+function a7ConditionSourceFamilySignature(semantic = null) {
+  const sourceIds = uniqueSorted(semantic?.regionalConditionResponse?.sourceIds || []);
+  return sourceIds.length ? sourceIds.join("|") : null;
+}
+
+/**
+ * Strict comparison identity for the A7 condition-response construct.
+ * A speed-route result is intentionally not compared directly with a grade-route
+ * result even when both are normalized to the same region-specific Reference 100.
+ */
+export function buildA7ConditionComparisonSignature(resultRecord = {}, rowOrRegionId = null) {
+  const result = resultRecord?.result || resultRecord;
+  const row = typeof rowOrRegionId === "string"
+    ? result?.regions?.find((item) => item.regionId === rowOrRegionId)
+    : rowOrRegionId;
+  if (!row?.regionId) return null;
+  const semantic = a7SemanticFor(resultRecord, row);
+  if (semantic?.regionalConditionResponse?.status !== "SUPPORTED_NUMERIC") return null;
+  const conditionIndexExact = a7ConditionIndexExact(semantic);
+  if (conditionIndexExact === null) return null;
+  const coverage = regionalV1CoverageMeta(row);
+  return Object.freeze({
+    semanticVersion: A7_SEMANTIC_DECOMPOSITION_VERSION,
+    authorityVersion: resultRecord.authority_version || result?.authorityVersion || null,
+    parameterSetVersion: resultRecord.parameter_set_version || result?.parameterSetVersion || null,
+    traceContractVersion: resultRecord.trace_contract_version || result?.traceContractVersion || null,
+    regionId: row.regionId,
+    constructId: row.constructId || null,
+    referenceDefinitionId: row.referenceDefinitionId || null,
+    referenceValue: row.referenceValue ?? 100,
+    routeFamilySignature: a7ConditionRouteFamilySignature(semantic),
+    sourceFamilySignature: a7ConditionSourceFamilySignature(semantic),
+    phase0NumericFamilyStatus: semantic.regionalConditionResponse.phase0NumericFamilyStatus || null,
+    coverageState: coverage.state,
+    coverageSignature: coverage.signature,
+  });
+}
+
+export function compareA7ConditionSignatures(current, candidate) {
+  if (!current || !candidate) {
+    return Object.freeze({ status: "INCOMPATIBLE", differences: Object.freeze(["A7_CONDITION_SIGNATURE_MISSING"]), directDeltaAllowed: false });
+  }
+  const fields = [
+    "semanticVersion",
+    "authorityVersion",
+    "parameterSetVersion",
+    "traceContractVersion",
+    "regionId",
+    "constructId",
+    "referenceDefinitionId",
+    "referenceValue",
+    "routeFamilySignature",
+    "sourceFamilySignature",
+    "phase0NumericFamilyStatus",
+    "coverageState",
+    "coverageSignature",
+  ];
+  const differences = fields.filter((field) => (
+    field === "referenceValue"
+      ? !sameNumber(current[field], candidate[field])
+      : current[field] !== candidate[field]
+  ));
+  return Object.freeze({
+    status: differences.length ? "INCOMPATIBLE" : "DIRECT_COMPARABLE",
+    differences: Object.freeze(differences),
+    directDeltaAllowed: differences.length === 0,
+  });
+}
+
+export function buildA7ConditionHistoryComparison({ currentExperience, experiences = [], regionId, limit = 8 }) {
+  const currentRecord = currentExperience?.regionalV1ResultRecord;
+  const currentRow = currentExperience?.regionalV1Result?.regions?.find((item) => item.regionId === regionId);
+  const currentSemantic = a7SemanticFor(currentRecord || currentExperience?.regionalV1Result || {}, currentRow);
+  const currentSignature = buildA7ConditionComparisonSignature(currentRecord || currentExperience?.regionalV1Result || {}, currentRow);
+  const currentConditionIndexExact = a7ConditionIndexExact(currentSemantic);
+  const rows = [...experiences]
+    .filter((experience) => experience?.record?.id && experience.record.id !== currentExperience?.record?.id)
+    .filter((experience) => experience?.record?.activityType === "run")
+    .sort((left, right) => (
+      String(right.record.date || "").localeCompare(String(left.record.date || ""))
+      || String(right.record.id || "").localeCompare(String(left.record.id || ""))
+    ))
+    .map((experience) => {
+      const candidateRecord = experience.regionalV1ResultRecord;
+      const candidateRow = experience.regionalV1Result?.regions?.find((item) => item.regionId === regionId);
+      const candidateSemantic = a7SemanticFor(candidateRecord || experience?.regionalV1Result || {}, candidateRow);
+      const candidateSignature = buildA7ConditionComparisonSignature(candidateRecord || experience?.regionalV1Result || {}, candidateRow);
+      const compatibility = compareA7ConditionSignatures(currentSignature, candidateSignature);
+      const conditionIndexExact = a7ConditionIndexExact(candidateSemantic);
+      const directDeltaPoints = compatibility.directDeltaAllowed
+        && currentConditionIndexExact !== null
+        && conditionIndexExact !== null
+        ? currentConditionIndexExact - conditionIndexExact
+        : null;
+      return Object.freeze({
+        recordId: experience.record.id,
+        date: experience.record.date || "",
+        conditionIndexExact,
+        displayConditionIndex: conditionIndexExact === null ? null : Math.round(conditionIndexExact),
+        routeFamilySignature: candidateSignature?.routeFamilySignature || null,
+        signature: candidateSignature,
+        compatibility,
+        directDeltaPoints,
+      });
+    })
+    .filter((item) => item.signature || item.conditionIndexExact !== null)
+    .slice(0, Math.max(1, Number(limit) || 8));
+  return Object.freeze({
+    regionId,
+    currentConditionIndexExact,
+    currentSignature,
+    rows: Object.freeze(rows),
+    counts: Object.freeze({
+      direct: rows.filter((item) => item.compatibility.status === "DIRECT_COMPARABLE").length,
+      incompatible: rows.filter((item) => item.compatibility.status === "INCOMPATIBLE").length,
+    }),
+  });
+}
+
+export function buildA7ConditionPreviousComparable({ currentExperience, experiences = [], regionId }) {
+  const currentRecord = currentExperience?.regionalV1ResultRecord;
+  const currentRow = currentExperience?.regionalV1Result?.regions?.find((item) => item.regionId === regionId);
+  const currentSemantic = a7SemanticFor(currentRecord || currentExperience?.regionalV1Result || {}, currentRow);
+  const currentSignature = buildA7ConditionComparisonSignature(currentRecord || currentExperience?.regionalV1Result || {}, currentRow);
+  const currentConditionIndexExact = a7ConditionIndexExact(currentSemantic);
+  if (!currentSignature || currentConditionIndexExact === null) {
+    return Object.freeze({
+      status: "CURRENT_CONDITION_UNAVAILABLE",
+      regionId,
+      currentConditionIndexExact,
+      previous: null,
+      pointChangeExact: null,
+      pointChangeRounded: null,
+      percentChangeExact: null,
+      percentChangeRounded: null,
+      direction: "NONE",
+    });
+  }
+  const previousRows = [...experiences]
+    .filter((experience) => experience?.record?.id && experience.record.id !== currentExperience?.record?.id)
+    .filter((experience) => experience?.record?.activityType === "run")
+    .filter((experience) => compareExperienceChronology(experience, currentExperience) < 0)
+    .sort((left, right) => compareExperienceChronology(right, left))
+    .map((experience) => {
+      const candidateRecord = experience.regionalV1ResultRecord;
+      const candidateRow = experience.regionalV1Result?.regions?.find((item) => item.regionId === regionId);
+      const candidateSemantic = a7SemanticFor(candidateRecord || experience?.regionalV1Result || {}, candidateRow);
+      const signature = buildA7ConditionComparisonSignature(candidateRecord || experience?.regionalV1Result || {}, candidateRow);
+      const compatibility = compareA7ConditionSignatures(currentSignature, signature);
+      const conditionIndexExact = a7ConditionIndexExact(candidateSemantic);
+      return Object.freeze({
+        recordId: experience.record.id,
+        date: experience.record.date || "",
+        createdAt: experience.record.createdAt || "",
+        conditionIndexExact,
+        displayConditionIndex: conditionIndexExact === null ? null : Math.round(conditionIndexExact),
+        routeFamilySignature: signature?.routeFamilySignature || null,
+        signature,
+        compatibility,
+      });
+    })
+    .filter((item) => item.signature || item.conditionIndexExact !== null);
+  const previous = previousRows.find((item) => (
+    item.compatibility.directDeltaAllowed
+    && item.conditionIndexExact !== null
+    && item.conditionIndexExact > 0
+  ));
+  if (!previous) {
+    return Object.freeze({
+      status: previousRows.length ? "NO_COMPARABLE_CONDITION_RECORD" : "NO_PREVIOUS_CONDITION_RECORD",
+      regionId,
+      currentConditionIndexExact,
+      previous: previousRows[0] || null,
+      pointChangeExact: null,
+      pointChangeRounded: null,
+      percentChangeExact: null,
+      percentChangeRounded: null,
+      direction: "NONE",
+    });
+  }
+  const pointChangeExact = currentConditionIndexExact - previous.conditionIndexExact;
+  const percentChangeExact = ((currentConditionIndexExact / previous.conditionIndexExact) - 1) * 100;
+  const direction = Math.abs(pointChangeExact) < 1e-9
+    ? "UNCHANGED"
+    : pointChangeExact > 0
+      ? "INCREASE"
+      : "DECREASE";
+  return Object.freeze({
+    status: "COMPARABLE",
+    regionId,
+    currentConditionIndexExact,
+    previous,
+    pointChangeExact,
+    pointChangeRounded: Math.round(pointChangeExact),
+    percentChangeExact,
+    percentChangeRounded: Math.round(percentChangeExact),
+    direction,
+  });
+}
+
+export function buildA7ConditionPreviousComparableMap({ currentExperience, experiences = [] }) {
+  const regions = currentExperience?.regionalV1Result?.regions || [];
+  return Object.freeze(Object.fromEntries(regions.map((row) => [
+    row.regionId,
+    buildA7ConditionPreviousComparable({ currentExperience, experiences, regionId: row.regionId }),
+  ])));
+}
+
 export function buildRegionalV1HistoryComparison({ currentExperience, experiences = [], regionId, limit = 8 }) {
   const currentRecord = currentExperience?.regionalV1ResultRecord;
   const currentRow = currentExperience?.regionalV1Result?.regions?.find((item) => item.regionId === regionId);
@@ -619,6 +954,8 @@ function buildOutputSemanticMetadata(resultRecord) {
   return Object.freeze({
     output_semantic_version: REGIONAL_V1_OUTPUT_SEMANTIC_VERSION,
     comparison_signatures: signatures,
+    a7_semantic_decomposition_version: A7_SEMANTIC_DECOMPOSITION_VERSION,
+    a7_region_semantics: buildA7SemanticDecompositionMap(resultRecord.result),
   });
 }
 

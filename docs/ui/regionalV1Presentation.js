@@ -1,6 +1,7 @@
 import { REGIONS } from "../core/model/regionalV1/engine/data.js";
 import { bodyRegionDisplayName, bodyRegionFamiliarName, bodyRegionFormalName } from "./bodyRegionTerminology.js";
 import {
+  buildA7RegionSemanticDecomposition,
   regionalV1ConditionSupportMeta,
   regionalV1CoverageMeta,
   regionalV1ExposureMeta,
@@ -32,135 +33,174 @@ const VIEWS = [
 ];
 
 function finite(value) { return value !== null && value !== "" && Number.isFinite(Number(value)); }
-function stateLabel(rowOrState) {
-  if (rowOrState && typeof rowOrState === "object" && regionalV1ConditionSupportMeta(rowOrState).status === "EXPOSURE_ONLY_CONDITION_UNSUPPORTED") return "走行量のみで表示";
-  const state = typeof rowOrState === "object" ? rowOrState?.calculationState : rowOrState;
+
+function semanticFor(resultRecord, row) {
+  const stored = resultRecord?.a7_region_semantics?.[row?.regionId];
+  return stored && typeof stored === "object" ? stored : buildA7RegionSemanticDecomposition(row || {});
+}
+
+function conditionIndexExact(semantic) {
+  const ratio = semantic?.regionalConditionResponse?.ratioExact;
+  return finite(ratio) && Number(ratio) > 0 ? 100 * Number(ratio) : null;
+}
+
+function conditionDisplayIndex(semantic) {
+  const exact = conditionIndexExact(semantic);
+  return exact === null ? null : Math.round(exact);
+}
+
+function conditionDisplayDelta(semantic) {
+  const exact = conditionIndexExact(semantic);
+  return exact === null ? null : Math.round(exact - 100);
+}
+
+function conditionStateLabel(row, semantic) {
+  const status = semantic?.regionalConditionResponse?.status;
+  if (status === "SUPPORTED_NUMERIC") return "条件応答を表示";
+  if (status === "UNSUPPORTED_NO_NUMERIC_MAGNITUDE") return "条件応答の数値なし";
+  const state = row?.calculationState;
   return {
-    CALCULATED: "表示あり",
-    PARTIAL: "一部の条件で表示",
+    CALCULATED: "条件応答の数値なし",
+    PARTIAL: "条件応答の数値なし",
     NOT_CALCULABLE: "表示なし",
     OUT_OF_SUPPORTED_RANGE: "確認できる範囲外",
     NOT_APPLICABLE: "対象外",
   }[state] || "表示状態を確認";
 }
-function directionState(row) {
-  if (!finite(row?.displayIndex)) return "unavailable";
-  const delta = Number(row.displayDeltaPoints);
+
+function directionState(semantic) {
+  const delta = conditionDisplayDelta(semantic);
+  if (delta === null) return "unavailable";
   return delta > 0 ? "above" : delta < 0 ? "below" : "reference";
 }
-function directionSymbol(row) {
-  return { above: "↑", below: "↓", reference: "=", unavailable: "—" }[directionState(row)];
+
+function directionSymbol(semantic) {
+  return { above: "↑", below: "↓", reference: "=", unavailable: "—" }[directionState(semantic)];
 }
-function direction(row) {
-  if (!finite(row?.displayIndex)) return stateLabel(row);
-  const delta = Number(row.displayDeltaPoints);
-  if (regionalV1ConditionSupportMeta(row).status === "EXPOSURE_ONLY_CONDITION_UNSUPPORTED") {
-    if (delta === 0) return "走行量のみの表示（走行条件の効果は未推定）";
-    return `走行量に基づき基準から${delta > 0 ? "+" : ""}${delta}ポイント（走行条件の効果は未推定）`;
+
+function direction(semantic) {
+  const delta = conditionDisplayDelta(semantic);
+  if (delta === null) return "走行条件による部位別応答は数値化していません";
+  if (delta === 0) return "条件応答の基準100と同じ";
+  return `条件応答の基準から${delta > 0 ? "+" : ""}${delta}ポイント`;
+}
+
+function formatExposureValue(value) {
+  if (!finite(value)) return null;
+  const number = Number(value);
+  if (Math.abs(number - Math.round(number)) < 1e-9) return String(Math.round(number));
+  return number.toFixed(1).replace(/\.0$/, "");
+}
+
+function commonExposureText(row, semantic) {
+  const exposure = semantic?.commonRunningExposure;
+  if (exposure?.status !== "NUMERIC") return "共通走行量：数値なし";
+  const meta = regionalV1ExposureMeta(row);
+  const current = formatExposureValue(exposure.qEquivalent);
+  const reference = formatExposureValue(exposure.qReference);
+  if (current !== null && reference !== null) {
+    return `共通走行量：${meta.shortLabel} ${current}${meta.unit}（表示上の基準 ${reference}${meta.unit}）`;
   }
-  if (delta === 0) return "表示上の基準100と同じ";
-  return `表示上の基準から${delta > 0 ? "+" : ""}${delta}ポイント`;
+  if (finite(exposure.ratioExact)) {
+    return `共通走行量：表示上の基準比 ${Number(exposure.ratioExact).toFixed(2)}`;
+  }
+  return "共通走行量：数値なし";
 }
-function semanticChips(row) {
+
+function semanticChips(row, semantic) {
   const exposure = regionalV1ExposureMeta(row);
   const coverage = regionalV1CoverageMeta(row);
   const chips = [];
-  if (exposure.fallback) chips.push("一部の情報で表示");
-  if (regionalV1ConditionSupportMeta(row).status === "EXPOSURE_ONLY_CONDITION_UNSUPPORTED") chips.push("走行条件の効果は未推定");
-  else if (coverage.state === "PARTIAL") chips.push("一部の条件で表示");
+  if (semantic?.regionalConditionResponse?.status === "SUPPORTED_NUMERIC") chips.push("走行条件を数値化");
+  else chips.push("走行条件の数値なし");
+  if (exposure.fallback) chips.push("走行量は一部情報から算出");
+  if (coverage.state === "PARTIAL" && semantic?.regionalConditionResponse?.status === "SUPPORTED_NUMERIC") chips.push("一部条件を反映");
   return chips;
 }
-function renderMap(recordId, rows) {
+
+function renderMap(recordId, rows, resultRecord) {
   const byRegion = new Map(rows.map((row) => [row.regionId, row]));
-  return `<div class="v27-body-map regional-v1-map" role="group" aria-label="12部位の部位ごとの負荷傾向指数。色は各部位自身の基準100に対する方向を表します。">${VIEWS.map((view) => `<figure class="v27-body-map__view"><figcaption>${view.title}</figcaption><svg viewBox="70 10 160 430" aria-label="${escapeHtml(view.title)}の部位図"><defs><pattern id="regional-unavailable-${view.key}" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="currentColor" opacity="0.08"></rect><line x1="0" y1="0" x2="0" y2="10" stroke="currentColor" stroke-width="3" opacity="0.24"></line></pattern></defs><g class="body-map__silhouette">${view.silhouette}</g>${view.paths.map(([id, d]) => {
+  return `<div class="v27-body-map regional-v1-map" role="group" aria-label="12部位の走行条件に対する部位別応答。色は数値化できた部位だけ、その部位自身の条件応答の基準100に対する方向を表します。">${VIEWS.map((view) => `<figure class="v27-body-map__view"><figcaption>${view.title}</figcaption><svg viewBox="70 10 160 430" aria-label="${escapeHtml(view.title)}の部位図"><defs><pattern id="regional-unavailable-${view.key}" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="currentColor" opacity="0.08"></rect><line x1="0" y1="0" x2="0" y2="10" stroke="currentColor" stroke-width="3" opacity="0.24"></line></pattern></defs><g class="body-map__silhouette">${view.silhouette}</g>${view.paths.map(([id, d]) => {
     const row = byRegion.get(id);
-    const state = directionState(row);
+    const semantic = semanticFor(resultRecord, row);
+    const state = directionState(semantic);
     const displayName = bodyRegionDisplayName(id, row?.regionName || id, { includeFamiliar: true });
-    const label = `${displayName}：${finite(row?.displayIndex) ? `${row.displayIndex}、${direction(row)}` : "数値なし"}`;
+    const displayIndex = conditionDisplayIndex(semantic);
+    const label = `${displayName}：${displayIndex === null ? "条件応答の数値なし" : `${displayIndex}、${direction(semantic)}`}`;
     return `<a class="regional-v1-map__link" href="#/body-part-detail?recordId=${encodeURIComponent(recordId)}&regionId=${encodeURIComponent(id)}" aria-label="${escapeHtml(`${label}。詳細を開く`)}"><path class="v27-body-map__region" data-direction="${state}" data-region-id="${id}"${state === "unavailable" ? ` style="fill:url(#regional-unavailable-${view.key})"` : ""} d="${d}"><title>${escapeHtml(label)}</title></path></a>`;
   }).join("")}</svg></figure>`).join("")}</div>`;
 }
+
 function formatComparisonDate(value = "") {
   const matched = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!matched) return String(value || "日付不明");
   return `${Number(matched[1])}年${Number(matched[2])}月${Number(matched[3])}日`;
 }
+
 function renderPreviousComparison(comparison, enabled) {
   if (!enabled) return "";
   if (comparison?.status === "COMPARABLE") {
-    const exact = Number(comparison.percentChangeExact);
-    const symbol = exact > 0 ? "↑" : exact < 0 ? "↓" : "→";
-    const change = Math.abs(exact) < 1e-9
+    const points = Number(comparison.pointChangeExact);
+    const symbol = points > 0 ? "↑" : points < 0 ? "↓" : "→";
+    const rounded = Number(comparison.pointChangeRounded);
+    const change = Math.abs(points) < 1e-9
       ? "変化なし"
-      : Math.abs(exact) < 1
-        ? `${symbol} 1%未満`
-        : `${symbol} ${exact > 0 ? "+" : ""}${comparison.percentChangeRounded}%`;
-    const exposureOnly = comparison.conditionSupportStatus === "EXPOSURE_ONLY_CONDITION_UNSUPPORTED";
-    return `<span class="regional-result-row__previous" data-previous-comparison="comparable"><strong>${exposureOnly ? "走行量のみの前回比較" : "前回比較"} ${escapeHtml(change)}</strong><small>${escapeHtml(formatComparisonDate(comparison.previous?.date))}・${exposureOnly ? "走行条件の効果は未推定" : "同じ意味で比較できる記録"}</small></span>`;
+      : `${symbol} ${rounded > 0 ? "+" : ""}${rounded}ポイント`;
+    return `<span class="regional-result-row__previous" data-previous-comparison="comparable"><strong>前回の条件応答との比較 ${escapeHtml(change)}</strong><small>${escapeHtml(formatComparisonDate(comparison.previous?.date))}・同じ部位、同じ条件軸、同じ基準で比較</small></span>`;
   }
-  if (comparison?.status === "NO_COMPARABLE_RECORD") {
-    return '<span class="regional-result-row__previous" data-previous-comparison="not-comparable"><strong>前回比較なし</strong><small>同じ意味で比べられる過去記録がないため割合表示なし</small></span>';
+  if (comparison?.status === "NO_COMPARABLE_CONDITION_RECORD") {
+    return '<span class="regional-result-row__previous" data-previous-comparison="not-comparable"><strong>条件応答の前回比較なし</strong><small>同じ条件軸・同じ基準で比べられる過去記録がありません</small></span>';
   }
-  if (comparison?.status === "CURRENT_UNAVAILABLE") {
-    return '<span class="regional-result-row__previous" data-previous-comparison="unavailable"><strong>前回比較なし</strong><small>今回の指数を表示できません</small></span>';
+  if (comparison?.status === "CURRENT_CONDITION_UNAVAILABLE") {
+    return '<span class="regional-result-row__previous" data-previous-comparison="unavailable"><strong>条件応答の前回比較なし</strong><small>今回の走行条件による部位別応答を数値化していません</small></span>';
   }
-  return '<span class="regional-result-row__previous" data-previous-comparison="none"><strong>前回比較なし</strong><small>比較できる過去記録はまだありません</small></span>';
+  return '<span class="regional-result-row__previous" data-previous-comparison="none"><strong>条件応答の前回比較なし</strong><small>比較できる過去記録はまだありません</small></span>';
 }
-function visualPosition(row) {
-  if (!finite(row?.displayIndex)) return 50;
-  return Math.max(2, Math.min(98, Number(row.displayIndex) / 2));
+
+function visualPosition(semantic) {
+  const index = conditionIndexExact(semantic);
+  if (index === null) return 50;
+  return Math.max(2, Math.min(98, index / 2));
 }
-function renderList(recordId, rows, previousComparisons = {}, showPreviousComparison = true) {
+
+function renderList(recordId, rows, resultRecord, previousComparisons = {}, showPreviousComparison = true) {
   return `<ul class="regional-result-grid regional-v1-list">${rows.map((row) => {
-    const available = finite(row.displayIndex);
+    const semantic = semanticFor(resultRecord, row);
+    const displayIndex = conditionDisplayIndex(semantic);
+    const delta = conditionDisplayDelta(semantic);
+    const available = displayIndex !== null;
     const value = available
-      ? `<strong><span aria-hidden="true">${directionSymbol(row)}</span> ${row.displayIndex}</strong><small>${row.displayDeltaPoints === 0 ? "±0" : `${row.displayDeltaPoints > 0 ? "+" : ""}${row.displayDeltaPoints}`}ポイント</small>`
-      : '<span class="regional-result-row__building">数値なし</span>';
+      ? `<strong><span aria-hidden="true">${directionSymbol(semantic)}</span> ${displayIndex}</strong><small>${delta === 0 ? "±0" : `${delta > 0 ? "+" : ""}${delta}`}ポイント</small>`
+      : '<span class="regional-result-row__building">条件応答の数値なし</span>';
     const meter = available
-      ? `<span class="regional-result-row__scale" aria-label="表示上の基準100を中央とする位置"><i aria-hidden="true"><em>基準100</em></i><b style="--regional-position:${visualPosition(row)}%"></b></span>`
+      ? `<span class="regional-result-row__scale" aria-label="条件応答の基準100を中央とする位置"><i aria-hidden="true"><em>基準100</em></i><b style="--regional-position:${visualPosition(semantic)}%"></b></span>`
       : "";
     const formalName = bodyRegionFormalName(row.regionId, row.regionName);
     const familiarName = bodyRegionFamiliarName(row.regionId, row.regionName);
-    return `<li class="regional-result-card" data-direction="${directionState(row)}"><a href="#/body-part-detail?recordId=${encodeURIComponent(recordId)}&regionId=${encodeURIComponent(row.regionId)}" aria-label="${escapeHtml(`${formalName}の詳細を開く`)}"><span class="regional-result-row__name"><strong>${escapeHtml(formalName)}</strong>${familiarName && familiarName !== formalName ? `<small class="body-region-familiar">${escapeHtml(familiarName)}</small>` : ""}</span><span class="regional-result-row__value">${value}</span>${meter}<span class="regional-result-row__direction">${escapeHtml(direction(row))}</span>${renderPreviousComparison(previousComparisons[row.regionId], showPreviousComparison)}<span class="regional-result-row__chips"><small>${escapeHtml(stateLabel(row))}</small>${semanticChips(row).map((chip) => `<small>${escapeHtml(chip)}</small>`).join("")}</span></a></li>`;
+    return `<li class="regional-result-card" data-direction="${directionState(semantic)}"><a href="#/body-part-detail?recordId=${encodeURIComponent(recordId)}&regionId=${encodeURIComponent(row.regionId)}" aria-label="${escapeHtml(`${formalName}の詳細を開く`)}"><span class="regional-result-row__name"><strong>${escapeHtml(formalName)}</strong>${familiarName && familiarName !== formalName ? `<small class="body-region-familiar">${escapeHtml(familiarName)}</small>` : ""}</span><span class="regional-result-row__value">${value}</span>${meter}<span class="regional-result-row__direction">${escapeHtml(direction(semantic))}</span><span class="regional-result-row__exposure"><small>${escapeHtml(commonExposureText(row, semantic))}</small></span>${renderPreviousComparison(previousComparisons[row.regionId], showPreviousComparison)}<span class="regional-result-row__chips"><small>${escapeHtml(conditionStateLabel(row, semantic))}</small>${semanticChips(row, semantic).map((chip) => `<small>${escapeHtml(chip)}</small>`).join("")}</span></a></li>`;
   }).join("")}</ul>`;
 }
-function focusRows(rows, limit = 4) {
-  return rows
-    .filter((row) => finite(row.indexExact) && Number(row.indexExact) > 0)
-    .map((row, order) => ({ row, order, change: Math.abs(Math.log(Number(row.indexExact) / 100)) }))
-    .filter((item) => item.change > 1e-12)
-    .sort((left, right) => right.change - left.change || left.order - right.order)
-    .slice(0, limit)
-    .map((item) => item.row);
+
+function focusRows(rows, resultRecord) {
+  // A7 must not rank different regional endpoint families by numeric magnitude.
+  // Keep the fixed anatomical/registry order and show every region whose
+  // condition response is supportably numeric.
+  return rows.filter((row) => conditionIndexExact(semanticFor(resultRecord, row)) !== null);
 }
 
 function unavailableReasonMessage(result = {}, rows = []) {
-  if (!rows.length) {
-    return "保存済みの部位別結果を読み取れませんでした。ページを再読み込みしても続く場合は、同じ記録を開き直してください。";
-  }
+  if (!rows.length) return "保存済みの部位別結果を読み取れませんでした。ページを再読み込みしても続く場合は、同じ記録を開き直してください。";
   const messages = rows.flatMap((row) => (row.reasonTrace || [])
     .map((event) => String(event?.messageArgs?.message || ""))
     .filter(Boolean));
   const message = messages[0] || "";
-  if (message.includes("Distance is unavailable")) {
-    return "走行距離が確認できないため、12部位の指数を表示できません。保存した距離を確認してください。";
-  }
-  if (message.includes("Distance is outside")) {
-    return "走行距離が現在の表示対象（0.5〜20 km）の範囲外のため、12部位の指数を表示できません。";
-  }
-  if (message.includes("No route section")) {
-    return "今回の走行条件を確認できないため、12部位の指数を表示できません。";
-  }
-  if (message.includes("section speeds are unavailable")) {
-    return "平均ペースを確認できないため、12部位の指数を表示できません。距離と実走時間を確認してください。";
-  }
-  if (message.includes("section speeds are outside")) {
-    return "今回の平均ペースが現在の表示対象外のため、12部位の指数を表示できません。距離と実走時間を確認してください。";
-  }
-  if (result.overallCalculationState === "OUT_OF_SUPPORTED_RANGE") {
-    return "今回の走行条件が現在の表示対象範囲外のため、12部位の指数を表示できません。";
-  }
-  return "今回の入力条件では、12部位の指数を表示できません。全12部位表示で各部位の状態を確認できます。";
+  if (message.includes("Distance is unavailable")) return "走行距離が確認できないため、部位別の走行量と条件応答を表示できません。保存した距離を確認してください。";
+  if (message.includes("Distance is outside")) return "走行距離が現在の表示対象（0.5〜20 km）の範囲外のため、部位別表示を作成できません。";
+  if (message.includes("No route section")) return "今回の走行条件を確認できないため、部位別表示を作成できません。";
+  if (message.includes("section speeds are unavailable")) return "平均ペースを確認できないため、部位別の条件応答を確認できません。距離と実走時間を確認してください。";
+  if (message.includes("section speeds are outside")) return "今回の平均ペースが現在の表示対象外のため、部位別の条件応答を確認できません。";
+  if (result.overallCalculationState === "OUT_OF_SUPPORTED_RANGE") return "今回の走行条件が現在の表示対象範囲外です。";
+  return "今回の入力条件では、走行条件による部位別応答を数値化できません。全12部位表示で、走行量と各部位の対応状況を確認できます。";
 }
 
 function renderRecoveryNotice(resultRecord = {}) {
@@ -170,37 +210,36 @@ function renderRecoveryNotice(resultRecord = {}) {
 
 export function renderRegionalV1Card({ resultRecord, previousComparisons = {}, initialView = "focus", showPreviousComparison = true }) {
   if (resultRecord?.state === "REST") {
-    return `<section class="result-card result-card--distribution" data-information-role="model"><div class="result-card__heading"><div><p>12部位の比較表示</p><h2 id="distribution-title">部位ごとの負荷傾向指数</h2></div>${renderStatusLabel("休養記録", "neutral")}</div><p>休養日には走行による部位別指数を作成しません。</p></section>`;
+    return `<section class="result-card result-card--distribution" data-information-role="model"><div class="result-card__heading"><div><p>12部位の条件応答</p><h2 id="distribution-title">部位ごとの条件応答</h2></div>${renderStatusLabel("休養記録", "neutral")}</div><p>休養日には走行条件による部位別応答を作成しません。</p></section>`;
   }
   const rows = resultRecord?.result?.regions || [];
-  const availableRows = rows.filter((row) => finite(row?.displayIndex));
-  const focused = focusRows(rows);
+  const availableRows = rows.filter((row) => conditionIndexExact(semanticFor(resultRecord, row)) !== null);
+  const focused = focusRows(rows, resultRecord);
   const resolvedView = initialView === "all" ? "all" : "focus";
   const focusContent = focused.length
-    ? renderList(resultRecord.record_id, focused, previousComparisons, showPreviousComparison)
-    : availableRows.length
-      ? '<p class="regional-focus-empty">今回は基準100との差がある部位がありません。全12部位表示で各部位の状態を確認できます。</p>'
-      : `<div class="regional-focus-empty regional-focus-empty--unavailable"><strong>部位別指数を表示できません</strong><p>${escapeHtml(unavailableReasonMessage(resultRecord?.result || {}, rows))}</p></div>`;
-  return `<section class="result-card result-card--distribution result-card--regional-v27" data-information-role="model" aria-labelledby="distribution-title" data-regional-v1-card data-regional-v1-view="${resolvedView}">
-    <div class="result-card__heading"><div><p>各部位の基準100との比較</p><h2 id="distribution-title">部位ごとの負荷傾向指数</h2></div>${renderStatusLabel("部位ごとの表示", "model")}</div>
-    <p class="inline-helper"><strong>100は安全値・正常値・平均値ではありません。</strong> 12部位それぞれについて、その部位固有の表示上の基準からの増減を表示します。</p>
+    ? renderList(resultRecord.record_id, focused, resultRecord, previousComparisons, showPreviousComparison)
+    : `<div class="regional-focus-empty regional-focus-empty--unavailable"><strong>走行条件による部位別応答を数値化できません</strong><p>${escapeHtml(unavailableReasonMessage(resultRecord?.result || {}, rows))}</p><p>走行量は条件応答とは分けて各部位に保持しています。</p></div>`;
+  return `<section class="result-card result-card--distribution result-card--regional-v27" data-information-role="model" aria-labelledby="distribution-title" data-regional-v1-card data-regional-v1-view="${resolvedView}" data-a7-condition-primary="true">
+    <div class="result-card__heading"><div><p>走行条件に対する部位別応答</p><h2 id="distribution-title">部位ごとの条件応答</h2></div>${renderStatusLabel("条件応答を主表示", "model")}</div>
+    <p class="inline-helper"><strong>ここでは走行量と走行条件を分けて表示します。</strong> 主な数値は、速度・勾配・路面などについて、その部位で根拠に基づく条件応答を数値化できた場合だけ表示します。走行量は各部位で別に確認できます。</p>
+    <p class="inline-helper"><strong>100は安全値・正常値・平均値ではありません。</strong> 初心者平均でもありません。 数値がある部位について、その部位固有の条件応答の表示上の基準です。</p>
     ${renderRecoveryNotice(resultRecord)}
-    ${rows.some((row) => regionalV1ConditionSupportMeta(row).status === "EXPOSURE_ONLY_CONDITION_UNSUPPORTED") ? '<p class="inline-helper"><strong>「走行量のみで表示」では、今回の走行条件の効果を数値化していません。</strong> 坂・速度・路面などの条件が基準と同じという意味ではありません。</p>' : ""}
-    <div class="regional-v1-view-toggle" role="group" aria-label="表示する部位"><button type="button" data-regional-v1-view-button="focus" aria-pressed="${resolvedView === "focus"}">基準との差がある部位</button><button type="button" data-regional-v1-view-button="all" aria-pressed="${resolvedView === "all"}">全12部位</button></div>
-    <p class="muted-text">「基準との差がある部位」は、各部位自身の基準100との差が大きい順に最大4部位を表示します。危険度や部位間の負荷順位ではありません。</p>
-    <ul class="regional-direction-legend" aria-label="身体図の色と記号"><li data-direction="above"><span aria-hidden="true">↑</span>基準より上</li><li data-direction="reference"><span aria-hidden="true">=</span>数値上は基準100</li><li data-direction="below"><span aria-hidden="true">↓</span>基準より下</li><li data-direction="unavailable"><span aria-hidden="true">—</span>表示なし</li></ul>
+    <div class="regional-v1-view-toggle" role="group" aria-label="表示する部位"><button type="button" data-regional-v1-view-button="focus" aria-pressed="${resolvedView === "focus"}">条件応答を数値化できた部位</button><button type="button" data-regional-v1-view-button="all" aria-pressed="${resolvedView === "all"}">全12部位</button></div>
+    <p class="muted-text">「条件応答を数値化できた部位」は、根拠に基づいて数値化できた部位を身体図と同じ固定順で表示します。数値の大きさによる並べ替えや部位間ランキングはしません。</p>
+    <ul class="regional-direction-legend" aria-label="身体図の色と記号"><li data-direction="above"><span aria-hidden="true">↑</span>条件応答の基準より上</li><li data-direction="reference"><span aria-hidden="true">=</span>数値上は基準100</li><li data-direction="below"><span aria-hidden="true">↓</span>条件応答の基準より下</li><li data-direction="unavailable"><span aria-hidden="true">—</span>条件応答の数値なし</li></ul>
     <div class="regional-v1-overview">
-      <div class="regional-v1-overview__map">${renderMap(resultRecord.record_id, rows)}<p class="muted-text">色は各部位自身の基準100に対する方向を示します。部位間の負荷順位や危険度ではありません。部位を選ぶと詳細を開けます。</p></div>
+      <div class="regional-v1-overview__map">${renderMap(resultRecord.record_id, rows, resultRecord)}<p class="muted-text">色は、条件応答を数値化できた部位だけ、その部位自身の基準100に対する方向を示します。斜線の部位は条件が基準と同じなのではなく、今回の条件応答を数値化していない部位です。</p></div>
       <div class="regional-v1-overview__feedback">
         <div class="regional-result-list" data-regional-v1-panel="focus"${resolvedView === "focus" ? "" : " hidden"}>${focusContent}</div>
-        <div class="regional-result-list" data-regional-v1-panel="all"${resolvedView === "all" ? "" : " hidden"}>${renderList(resultRecord.record_id, rows, previousComparisons, showPreviousComparison)}</div>
+        <div class="regional-result-list" data-regional-v1-panel="all"${resolvedView === "all" ? "" : " hidden"}>${renderList(resultRecord.record_id, rows, resultRecord, previousComparisons, showPreviousComparison)}</div>
       </div>
     </div>
-    <details class="regional-claim-boundary"><summary>この数値の読み方と過去比較</summary><div>
+    <details class="regional-claim-boundary"><summary>この表示と過去比較の読み方</summary><div>
       <p>部位ごとに値が表す内容が異なるため、別部位の数値を同じ物理単位として比べません。</p>
-      <p>前回比較は、同じ部位・同じ基準など、同じ意味で比べられる最新の過去記録がある場合だけ表示します。部位の詳細では、今回の記録と関連する一般説明を確認できます。</p>
-      <p>前回比の増減は良し悪し、改善・悪化、傷害リスクを意味しません。</p>
-      <p>本人が入力した身体記録は別の情報として保存し、この指数とは分けて確認します。</p>
+      <p>共通走行量は、距離・歩数・接触回数などの走行量側の情報です。条件応答の数値へ置き換えず、別に表示します。</p>
+      <p>前回比較は、同じ部位・同じ条件軸・同じ基準など、条件応答の意味が一致する最新の過去記録がある場合だけ表示します。</p>
+      <p>増減は良し悪し、改善・悪化、傷害リスク、走行の可否を意味しません。</p>
+      <p>本人が入力した身体記録は別の情報として保存し、条件応答とは分けて確認します。</p>
     </div></details>
   </section>`;
 }

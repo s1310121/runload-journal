@@ -252,7 +252,7 @@ export function deriveRegionalEngineState(bundle){
   routes.push({
     routeId:"A6_NUCKOLS_SOURCE_PROTOCOL_PROXY",
     state:nuckolsProxySections.length===sections.filter(section=>Math.abs(signedSectionGrade(section)??0)>1e-9).length&&nuckolsProxySections.length?"PARTIAL":"INACTIVE",
-    regionIds:["BA-DISP-015","BA-DISP-023"],
+    regionIds:["BA-DISP-023"],
     metGates:nuckolsProxySections.length?["treadmill setting","2.25 m/s source speed","non-level percent-grade within -10% to +10% source range"]:[],
     unmetGates:nuckolsProxySections.length?[]:["source-protocol proxy requires 2.25 m/s treadmill running at a non-level grade within source range"],
     sourceIds:["SRC-SUP-003"],

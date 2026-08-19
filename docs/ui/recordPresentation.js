@@ -98,7 +98,7 @@ export function createNeutralResultSummary(experience = {}) {
   const resultRecord = experience.v27ResultRecord;
   if (resultRecord?.state === "RUN") {
     const total = resultRecord.result?.total?.central_points;
-    return `${activity}しました。走行全体の比較用推定値は${formatNumber(total, 1)}推定ポイントです。部位ごとの負荷傾向指数は、結果画面で全12部位を確認できます。本人の身体記録は「${subjectiveLabel}」として別に保存されています。`;
+    return `${activity}しました。走行全体の比較用推定値は${formatNumber(total, 1)}推定ポイントです。部位ごとの条件応答と共通走行量は、結果画面で全12部位を確認できます。本人の身体記録は「${subjectiveLabel}」として別に保存されています。`;
   }
   return `${activity}しました。この保存記録では一部の比較表示を利用できません。本人の身体記録は「${subjectiveLabel}」として保存されています。`;
 }

@@ -63,6 +63,11 @@ function normalizeSections(sections = []) {
     return [Object.freeze({
       sectionId: normalizeSingleLineText(item.sectionId, 80) || `section-${index + 1}`,
       sharePercent,
+      distanceKm: Number(item.distanceKm) > 0 ? Number(item.distanceKm) : null,
+      durationMinutes: Number(item.durationMinutes) > 0 ? Number(item.durationMinutes) : null,
+      steps: item.steps != null && Number.isInteger(Number(item.steps)) && Number(item.steps) >= 0 ? Number(item.steps) : null,
+      speedMps: Number(item.speedMps) > 0 ? Number(item.speedMps) : null,
+      cadenceSpm: Number(item.cadenceSpm) > 0 ? Number(item.cadenceSpm) : null,
       gradeDirection,
       gradePercent,
     })];

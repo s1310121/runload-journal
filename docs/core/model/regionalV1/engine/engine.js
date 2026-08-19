@@ -19,21 +19,22 @@ const MUSCLE_ENDPOINT_FAMILY_BY_ROUTE=Object.freeze({
   A5_WILLER_2024_TABULATED_SPEED_WORK:"WILLER_FUNCTIONAL_WORK_PROXY",
 });
 const MUSCLE_REFERENCE_DEFINITION_BY_REGION_AND_FAMILY=Object.freeze({
-  "BA-DISP-015":Object.freeze({HAMNER_COM_ACCEL_PROXY:"RCM-RDEF-015-HAMNER-COM-ACCEL",NUCKOLS_JOINT_POWER_PROXY:"RCM-RDEF-015-NUCKOLS-JOINT-POWER",PADULO_EMG_PROXY:"RCM-RDEF-015-PADULO-EMG"}),
+  "BA-DISP-015":Object.freeze({HAMNER_COM_ACCEL_PROXY:"RCM-RDEF-015-HAMNER-COM-ACCEL",PADULO_EMG_PROXY:"RCM-RDEF-015-PADULO-EMG"}),
   "BA-DISP-016":Object.freeze({NUCKOLS_JOINT_POWER_PROXY:"RCM-RDEF-016-NUCKOLS-JOINT-POWER",PADULO_EMG_PROXY:"RCM-RDEF-016-PADULO-EMG",WILLER_FUNCTIONAL_WORK_PROXY:"RCM-RDEF-016-WILLER-FUNCTIONAL-WORK"}),
   "BA-DISP-018":Object.freeze({WILLER_FUNCTIONAL_WORK_PROXY:"RCM-RDEF-018-WILLER-FUNCTIONAL-WORK"}),
   "BA-DISP-023":Object.freeze({HAMNER_COM_ACCEL_PROXY:"RCM-RDEF-023-HAMNER-COM-ACCEL",NUCKOLS_JOINT_POWER_PROXY:"RCM-RDEF-023-NUCKOLS-JOINT-POWER",PADULO_EMG_PROXY:"RCM-RDEF-023-PADULO-EMG",WILLER_FUNCTIONAL_WORK_PROXY:"RCM-RDEF-023-WILLER-FUNCTIONAL-WORK"}),
 });
 const HIP_ENDPOINT_FAMILY_BY_ROUTE=Object.freeze({
-  A3_SRC_SUP_003_JOINT_GRADE:"NUCKOLS_HIP_JOINT_POWER",
+  A8_NUCKOLS_HIP_TOTAL_ABSOLUTE_POWER:"NUCKOLS_HIP_TOTAL_ABSOLUTE_POWER",
   A5_WILLER_2024_TABULATED_SPEED_WORK:"WILLER_HIP_FUNCTIONAL_WORK",
 });
 const HIP_REFERENCE_DEFINITION_BY_FAMILY=Object.freeze({
-  NUCKOLS_HIP_JOINT_POWER:"RCM-RDEF-014-NUCKOLS-HIP-JOINT-POWER",
+  NUCKOLS_HIP_TOTAL_ABSOLUTE_POWER:"RCM-RDEF-014-NUCKOLS-HIP-TOTAL-ABSOLUTE-POWER",
   WILLER_HIP_FUNCTIONAL_WORK:"RCM-RDEF-014-WILLER-HIP-FUNCTIONAL-WORK",
 });
 const TRACE_CONTRACT_VERSION="runload-reason-trace-1.2";
 function muscleEndpointFamilies(routes=[]){return new Set(routes.map(route=>MUSCLE_ENDPOINT_FAMILY_BY_ROUTE[route]).filter(Boolean));}
+function effectiveHipEndpointFamilies(families=new Set()){return new Set(families);}
 function stateForRegion(observations,regionId){
   const regionObservations=(observations??[]).filter(observation=>observation.bodyAreaId===regionId);
   if(!regionObservations.length)return {log:0,overlay:{status:"NONE",observationCount:0,maxIntensity:null,timings:[],sensationTypes:[]},trace:[]};
@@ -115,7 +116,7 @@ function hasSupportedSurfaceComponent(section,categories){
   return (section.surfaceComponents??[]).some(component=>categories.has(component.exactSourceCategory)&&EXACT_SURFACE_EVIDENCE.has(component.exactSourceEvidence));
 }
 function exactSurfaceActiveForSection(section,input){
-  const speed=section.speedMps??input.derivedConditions.averageSpeedMps;
+  const speed=section.speedMps;
   const strike=value(input,"RL-IN-080");
   const shoeType=value(input,"RL-IN-072");
   const softness=value(input,"RL-IN-073");
@@ -124,7 +125,7 @@ function exactSurfaceActiveForSection(section,input){
     &&hasSupportedSurfaceComponent(section,EXACT_SURFACE_CATEGORIES);
 }
 function exactArchSurfaceActiveForSection(section,input){
-  const speed=section.speedMps??input.derivedConditions.averageSpeedMps;
+  const speed=section.speedMps;
   const shoeType=value(input,"RL-IN-072");
   const softness=value(input,"RL-IN-073");
   return Number.isFinite(speed)&&speed>=1.6&&speed<=2.4
@@ -223,8 +224,9 @@ function globalInputAccountingTrace(input,regions){
 }
 
 function effectiveRegionSemanticIdentity(region,activeRouteIds,activeEndpointFamilyIds=new Set()){
-  if(region.id==="BA-DISP-014"&&activeEndpointFamilyIds.size===1){
-    const family=[...activeEndpointFamilyIds][0];
+  const hipFamilies=effectiveHipEndpointFamilies(activeEndpointFamilyIds);
+  if(region.id==="BA-DISP-014"&&hipFamilies.size===1){
+    const family=[...hipFamilies][0];
     const referenceDefinitionId=HIP_REFERENCE_DEFINITION_BY_FAMILY[family];
     if(referenceDefinitionId)return {constructId:region.constructId,referenceDefinitionId};
   }
@@ -286,7 +288,7 @@ export function calculateRegionalLoad(engineInput){
     const regions=[];
     for(const region of REGIONS){let sumLog=0,totalWeight=0,state="CALCULATED",primaryUnavailable=false;const activeRouteIds=new Set(),activeEndpointFamilyIds=new Set(),activeInteractionIds=new Set(),sourceIds=new Set(),parameterIds=new Set(),usedInputIds=new Set(),omittedInputIds=new Set(),reasonTrace=[],sectionComponentCoverage=[],sectionContributionDrafts=[],supportedConditionSectionIds=[],unsupportedConditionSectionIds=[];
       for(const section of sections){const weight=integrationWeight(section);if(!(weight>0)){state=mergeState(state,"PARTIAL");reasonTrace.push({traceCode:"SECTION_WEIGHT_MISSING",severity:"WARNING",scope:"SECTION",regionId:region.id,sectionId:section.sectionId??null,routeId:null,messageKey:"section.weight_missing",messageArgs:{},numericEffectApplied:false,contributionLog:null,inputIds:["RL-IN-039"],sourceIds:[],parameterIds:[]});continue;}
-        const gait=normalizeGait(section.runningFormat);const result=evaluateRegionCondition(region.id,{speedMps:section.speedMps??engineInput.derivedConditions.averageSpeedMps,cadenceSpm:section.cadenceSpm??engineInput.derivedConditions.averageCadenceSpm,gradePercent:signedGradePercent(section),gait,runSetting:value(engineInput,"RL-IN-018"),footPlacement,surfaceComponents:section.surfaceComponents??value(engineInput,"RL-IN-041")??[],exactSurfaceActive:exactSurfaceActiveForSection(section,engineInput),exactArchSurfaceActive:exactArchSurfaceActiveForSection(section,engineInput),routeSet:rset});const sectionInputs=accountSectionInputs(section,result,usedInputIds);
+        const gait=normalizeGait(section.runningFormat);const result=evaluateRegionCondition(region.id,{speedMps:section.speedMps,cadenceSpm:section.cadenceSpm,gradePercent:signedGradePercent(section),gait,runSetting:value(engineInput,"RL-IN-018"),footPlacement,surfaceComponents:section.surfaceComponents??value(engineInput,"RL-IN-041")??[],exactSurfaceActive:exactSurfaceActiveForSection(section,engineInput),exactArchSurfaceActive:exactArchSurfaceActiveForSection(section,engineInput),routeSet:rset});const sectionInputs=accountSectionInputs(section,result,usedInputIds);
         state=mergeState(state,result.state);
         if(result.ratio==null){primaryUnavailable=true;for(const t of result.trace)reasonTrace.push({traceCode:t.traceCode,severity:"WARNING",scope:"REGION",regionId:region.id,sectionId:section.sectionId??null,routeId:null,messageKey:"regional.route.unavailable",messageArgs:{message:t.message,evidenceRange:result.evidenceRange},numericEffectApplied:false,contributionLog:null,inputIds:[],sourceIds:[],parameterIds:[]});continue;}
         const ratio=result.ratio;const sectionId=section.sectionId??null;const hasNumericConditionRoute=(result.routes?.length??0)>0;if(hasNumericConditionRoute)supportedConditionSectionIds.push(sectionId);else unsupportedConditionSectionIds.push(sectionId);sumLog+=weight*Math.log(ratio);totalWeight+=weight;sectionContributionDrafts.push({sectionId,weight,ratio,inputIds:sectionInputs,routes:[...result.routes],interactions:[...result.interactions],sources:[...result.sources],parameters:[...result.parameters],componentCoverage:result.componentCoverage,evidenceRange:result.evidenceRange});for(const x of result.routes){activeRouteIds.add(x);const family=MUSCLE_EXPOSURE_REGIONS.has(region.id)?MUSCLE_ENDPOINT_FAMILY_BY_ROUTE[x]:region.id==="BA-DISP-014"?HIP_ENDPOINT_FAMILY_BY_ROUTE[x]:null;if(family)activeEndpointFamilyIds.add(family);}for(const x of result.interactions)activeInteractionIds.add(x);for(const x of result.sources)sourceIds.add(x);for(const x of result.parameters)parameterIds.add(x);
@@ -305,8 +307,9 @@ export function calculateRegionalLoad(engineInput){
       if(activeRouteIds.size===0&&unsupportedConditionSectionIds.length>0){
         reasonTrace.push({traceCode:"EXPOSURE_ONLY_ALL_SECTIONS_CONDITION_UNSUPPORTED",severity:"INFO",scope:"REGION",regionId:region.id,sectionId:null,routeId:null,messageKey:"regional.exposure_only.condition_unsupported",messageArgs:{unsupportedConditionSectionIds:[...unsupportedConditionSectionIds],interpretation:"NO_NUMERIC_CONDITION_MAGNITUDE_APPLIED"},numericEffectApplied:false,contributionLog:null,inputIds:[],sourceIds:[...sourceIds],parameterIds:[]});
       }
-      if(region.id==="BA-DISP-014"&&activeEndpointFamilyIds.size>1){
-        reasonTrace.push({traceCode:"HETEROGENEOUS_ENDPOINT_FAMILY_MIX_PROHIBITED",severity:"WARNING",scope:"REGION",regionId:region.id,sectionId:null,routeId:null,messageKey:"regional.endpoint_family_mix.prohibited",messageArgs:{endpointFamilies:[...activeEndpointFamilyIds].sort(),activeRouteIds:[...activeRouteIds].sort(),reason:"NO_CROSS_SOURCE_REFERENCE_CALIBRATION_FOR_WITHIN_RECORD_AGGREGATION"},numericEffectApplied:false,contributionLog:null,inputIds:[],sourceIds:[...sourceIds],parameterIds:[]});
+      const effectiveHipFamilies=region.id==="BA-DISP-014"?effectiveHipEndpointFamilies(activeEndpointFamilyIds):new Set();
+      if(region.id==="BA-DISP-014"&&effectiveHipFamilies.size>1){
+        reasonTrace.push({traceCode:"HETEROGENEOUS_ENDPOINT_FAMILY_MIX_PROHIBITED",severity:"WARNING",scope:"REGION",regionId:region.id,sectionId:null,routeId:null,messageKey:"regional.endpoint_family_mix.prohibited",messageArgs:{endpointFamilies:[...activeEndpointFamilyIds].sort(),activeRouteIds:[...activeRouteIds].sort(),reason:"NO_SHARED_NATIVE_ENDPOINT_REFERENCE_FOR_WITHIN_RECORD_AGGREGATION"},numericEffectApplied:false,contributionLog:null,inputIds:[],sourceIds:[...sourceIds],parameterIds:[]});
         regions.push(nullRegion(region,"NOT_CALCULABLE",reasonTrace));continue;
       }
       if(MUSCLE_EXPOSURE_REGIONS.has(region.id)&&activeEndpointFamilyIds.size>1){
@@ -326,6 +329,7 @@ export function calculateRegionalLoad(engineInput){
       if(exposure.fallback)reasonTrace.push({traceCode:"EXPOSURE_BASIS_FALLBACK",severity:"INFO",scope:"REGION",regionId:region.id,sectionId:null,routeId:null,messageKey:"regional.exposure.fallback",messageArgs:{basis:exposure.basis,numericContributionRepresentedBy:"EXPOSURE_CONTRIBUTION"},numericEffectApplied:false,contributionLog:null,inputIds:[exposure.inputId],sourceIds:[],parameterIds:[exposure.parameterId,"RCM-P-GLOBAL-ALPHAE"]});
       const exposureLog=exposure.alphaE*Math.log(exposure.qEquivalent/exposure.qReference);const self=stateForRegion(observations,region.id);for(const event of self.trace)for(const id of event.inputIds)usedInputIds.add(id);completeRegionInputAccounting(engineInput,usedInputIds,omittedInputIds);const totalLog=conditionLog+exposureLog;const mechanical=100*Math.exp(totalLog);const index=mechanical;const contributionTrace=[...sectionContributionDrafts.map(draft=>sectionConditionContributionEvent(region.id,draft,totalWeight)),exposureContributionEvent(region.id,exposure,exposureLog)];const finalReasonTrace=[...contributionTrace,...reasonTrace,...self.trace];
       const semanticIdentity=effectiveRegionSemanticIdentity(region,activeRouteIds,activeEndpointFamilyIds);const limitations=["relative_model_estimate_not_measurement","cross_region_physical_comparison_prohibited"];if(MUSCLE_EXPOSURE_REGIONS.has(region.id)){limitations.push("project_dimensionless_repetition_weighting_not_physical_integral","source_endpoint_family_reference_specific");}
+      if(region.id==="BA-DISP-014"&&activeRouteIds.has("A8_NUCKOLS_HIP_TOTAL_ABSOLUTE_POWER"))limitations.push("nuckols_hip_total_absolute_power_is_within_source_project_derived_from_reported_positive_and_negative_average_power");
       if(region.id==="BA-DISP-024"&&activeRouteIds.has("A3_SRC_SUP_003_JOINT_GRADE"))limitations.push("project_contact_repetition_weighting_not_physical_total_work","source_endpoint_stride_average_joint_power");
       if(region.id==="BA-DISP-028"&&activeRouteIds.has("ARCH_SURFACE_X_HEELED_SHOE"))limitations.push("project_contact_repetition_weighting_not_physical_arch_dose","source_endpoint_peak_mla_angle");
       if((region.id==="BA-DISP-027"||region.id==="BA-DISP-029")&&activeRouteIds.has("SURFACE_X_STANDARD_SHOE"))limitations.push("surface_source_pti_per_contact_scaled_by_contacts_as_normalized_exposure_proxy");

@@ -99,19 +99,24 @@ function a3JointGradeRoute(regionId,context){
   if(!entry||context.runSetting!==JOINT_GRADE_SOURCE.runSetting)return null;
   if(!Number.isFinite(context.speedMps)||Math.abs(context.speedMps-JOINT_GRADE_SOURCE.speedMps)>JOINT_GRADE_SOURCE.speedMatchEpsilonMps)return null;
   const gp=context.gradePercent??0;
-  const evidenceRange=resolve1DKnots(JOINT_GRADE_SOURCE.gradePercent,gp,{axis:"gradePercent"});
-  const ratio=linearInterpolate(JOINT_GRADE_SOURCE.gradePercent,entry.ratios,gp);
+  const hipFamily=regionId==="BA-DISP-014" ? entry.endpointFamilies.totalAbsolutePower : null;
+  const gradeKnots=hipFamily?.gradePercent??JOINT_GRADE_SOURCE.gradePercent;
+  const ratios=hipFamily?.ratios??entry.ratios;
+  const routeId=hipFamily?.routeId??"A3_SRC_SUP_003_JOINT_GRADE";
+  const endpoint=hipFamily?.endpoint??entry.endpoint;
+  const evidenceRange=resolve1DKnots(gradeKnots,gp,{axis:"gradePercent"});
+  const ratio=linearInterpolate(gradeKnots,ratios,gp);
   if(ratio==null)return out("Grade is outside SRC-SUP-003 joint-level domain.",evidenceRange);
   return routeResult(
     ratio,
     entry.coverageState==="FULL"?"CALCULATED":"PARTIAL",
-    ["A3_SRC_SUP_003_JOINT_GRADE"],
+    [routeId],
     gp>0?["RCM-INT-001"]:gp<0?["RCM-INT-002"]:[],
     [entry.sourceAnchorRange],
     [],
-    [{traceCode:"SOURCE_BOUNDED_JOINT_GRADE",message:`${entry.endpoint}; source-reported percent-grade knots with within-study linear interpolation at the fixed 2.25 m/s treadmill protocol.`,numericEffectApplied:true}],
-    sourceCoverage(entry.endpoint,entry.coverageState),
-    {...evidenceRange,geometry:"1D_GRADE_AT_FIXED_SOURCE_SPEED",fixedProtocolGate:{axis:"speedMps",reference:JOINT_GRADE_SOURCE.speedMps,match:"NUMERIC_EPSILON_ONLY"}},
+    [{traceCode:hipFamily?"A8_SOURCE_BOUNDED_HIP_TOTAL_ABSOLUTE_GRADE":"SOURCE_BOUNDED_JOINT_GRADE",message:`${endpoint}; source-reported percent-grade knots with within-study linear interpolation at the fixed 2.25 m/s treadmill protocol.${hipFamily?" The same derived hip-power construct is retained from decline through incline; no cross-source bridge is applied.":""}`,numericEffectApplied:true}],
+    sourceCoverage(endpoint,entry.coverageState),
+    {...evidenceRange,geometry:"1D_GRADE_AT_FIXED_SOURCE_SPEED",...(hipFamily?{endpointFamilyId:hipFamily.familyId,referenceDefinitionId:hipFamily.referenceDefinitionId}:{}),fixedProtocolGate:{axis:"speedMps",reference:JOINT_GRADE_SOURCE.speedMps,match:"NUMERIC_EPSILON_ONLY"}},
   );
 }
 
@@ -484,7 +489,6 @@ export function evaluateRegionCondition(regionId,context,parameterOverrides={}){
     return partial("No source-bounded hip condition route is active; exposure-only partial result is retained.");
   }
   if(regionId==="BA-DISP-015"){
-    const nuckolsProxy=a6NuckolsSourceProtocolProxyRoute(regionId,context); if(nuckolsProxy)return nuckolsProxy;
     if(v<2||v>5)return partial("Gluteal speed route outside 2–5 m/s.");
     const exact009=context.runSetting==="TREADMILL"&&Math.abs(v-4.17)<=1e-9&&gp>0&&gp<=7
       ?logInterpolate(GLUTE_GRADE_CURVE,gp)

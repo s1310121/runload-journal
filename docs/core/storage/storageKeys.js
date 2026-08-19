@@ -1,4 +1,56 @@
 export const STORAGE_KEYS = Object.freeze({
+  records: "runner-load-a8-1d-candidate-v1-2-records",
+  modelResultsV27: "runner-load-a8-1d-candidate-v1-2-whole-run-results",
+  modelResultsRegionalV1: "runner-load-a8-1d-candidate-v1-2-regional-results",
+  subjectiveFeedback: "runner-load-a8-1d-candidate-v1-2-subjective-feedback",
+  plans: "runner-load-a8-1d-candidate-v1-2-plans",
+  notebook: "runner-load-a8-1d-candidate-v1-2-notebook",
+  profile: "runner-load-a8-1d-candidate-v1-2-profile",
+  settings: "runner-load-a8-1d-candidate-v1-2-settings",
+  draft: "runner-load-a8-1d-candidate-v1-2-draft",
+  courses: "runner-load-a8-1d-candidate-v1-2-courses",
+  backups: "runner-load-a8-1d-candidate-v1-2-backup",
+  legacyImportBackup: "runner-load-a8-1d-candidate-v1-2-legacy-import-backup",
+  corruptStorageBackup: "runner-load-a8-1d-candidate-v1-2-corrupt-storage-backup",
+  historyUndo: "runner-load-a8-1d-candidate-v1-2-history-undo",
+});
+
+export const A8_V1_1_CANDIDATE_PRESERVED_STORAGE_KEYS = Object.freeze({
+  records: "runner-load-a8-1d-candidate-v1-1-records",
+  modelResultsV27: "runner-load-a8-1d-candidate-v1-1-whole-run-results",
+  modelResultsRegionalV1: "runner-load-a8-1d-candidate-v1-1-regional-results",
+  subjectiveFeedback: "runner-load-a8-1d-candidate-v1-1-subjective-feedback",
+  plans: "runner-load-a8-1d-candidate-v1-1-plans",
+  notebook: "runner-load-a8-1d-candidate-v1-1-notebook",
+  profile: "runner-load-a8-1d-candidate-v1-1-profile",
+  settings: "runner-load-a8-1d-candidate-v1-1-settings",
+  draft: "runner-load-a8-1d-candidate-v1-1-draft",
+  courses: "runner-load-a8-1d-candidate-v1-1-courses",
+  backups: "runner-load-a8-1d-candidate-v1-1-backup",
+  legacyImportBackup: "runner-load-a8-1d-candidate-v1-1-legacy-import-backup",
+  corruptStorageBackup: "runner-load-a8-1d-candidate-v1-1-corrupt-storage-backup",
+  historyUndo: "runner-load-a8-1d-candidate-v1-1-history-undo",
+});
+
+export const A7_CANDIDATE_PRESERVED_STORAGE_KEYS = Object.freeze({
+  records: "runner-load-a7-final-candidate-v1-records",
+  modelResultsV27: "runner-load-a7-final-candidate-v1-whole-run-results",
+  modelResultsRegionalV1: "runner-load-a7-final-candidate-v1-regional-results",
+  subjectiveFeedback: "runner-load-a7-final-candidate-v1-subjective-feedback",
+  plans: "runner-load-a7-final-candidate-v1-plans",
+  notebook: "runner-load-a7-final-candidate-v1-notebook",
+  profile: "runner-load-a7-final-candidate-v1-profile",
+  settings: "runner-load-a7-final-candidate-v1-settings",
+  draft: "runner-load-a7-final-candidate-v1-draft",
+  courses: "runner-load-a7-final-candidate-v1-courses",
+  backups: "runner-load-a7-final-candidate-v1-backup",
+  legacyImportBackup: "runner-load-a7-final-candidate-v1-legacy-import-backup",
+  corruptStorageBackup: "runner-load-a7-final-candidate-v1-corrupt-storage-backup",
+  historyUndo: "runner-load-a7-final-candidate-v1-history-undo",
+});
+
+
+export const FORMAL_CURRENT_PRESERVED_STORAGE_KEYS = Object.freeze({
   records: "runner-load-app-records-v1",
   modelResultsV27: "runner-load-app-model-results-v2.7",
   modelResultsRegionalV1: "runner-load-app-model-results-regional-v1",
