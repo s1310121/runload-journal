@@ -72,7 +72,7 @@ export function bindPersonalInput({ services }) {
       return;
     }
     updateRecordInputWorkspaceFields(currentPersonalFields(form));
-    markRecordInputJourneyReturn({ source: "personal", outcome: "applied", notice: "シューズと走り方のメモを入力画面へ反映しました。" });
+    markRecordInputJourneyReturn({ source: "personal", outcome: "applied", notice: "シューズと気づきメモを入力画面へ反映しました。" });
     window.location.hash = String(form.dataset.returnTo || "#/record-input");
   });
 

@@ -51,7 +51,7 @@ function defaultNotice(source = "", outcome = "cancelled") {
   if (outcome === "applied" && source === "subjective") return "今回の身体記録を入力画面へ反映しました。";
   if (source === "course") return "コース条件を変更せず、入力途中を保ったまま戻りました。";
   if (source === "subjective") return "今回の身体記録を変更せず、入力途中を保ったまま戻りました。";
-  if (source === "personal") return "シューズと走り方のメモを変更せず、入力途中を保ったまま戻りました。";
+  if (source === "personal") return "シューズと気づきメモを変更せず、入力途中を保ったまま戻りました。";
   return "入力途中を保ったまま戻りました。";
 }
 

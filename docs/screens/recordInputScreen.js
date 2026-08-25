@@ -175,8 +175,8 @@ function renderPersonalHiddenFields(record = {}) {
 function renderPersonalEntry(record = {}) {
   const summary = personalContextSummary(record);
   return `<section class="record-personal-entry" id="record-personal-entry" aria-labelledby="record-personal-entry-title">
-    <div class="record-subjective-entry__heading"><div><p>使用したもの・本人の気づき</p><h3 id="record-personal-entry-title">シューズと走り方のメモ</h3></div><span class="disclosure-status" data-personal-summary-status>${escapeHtml(summary.label)}</span></div>
-    <p class="record-subjective-entry__summary" data-personal-summary-description>${escapeHtml(summary.hasInput ? summary.description : "履いたシューズ、自分で感じた足のつき方・歩幅、意識したことを任意で残します。")}</p>
+    <div class="record-subjective-entry__heading"><div><p>使用したもの・本人の気づき</p><h3 id="record-personal-entry-title">シューズと気づきメモ</h3></div><span class="disclosure-status" data-personal-summary-status>${escapeHtml(summary.label)}</span></div>
+    <p class="record-subjective-entry__summary" data-personal-summary-description>${escapeHtml(summary.hasInput ? summary.description : "履いたシューズ、今日意識したこと、あとで振り返りたい気づきを任意で残します。")}</p>
     <div class="record-subjective-entry__actions"><button class="button button--secondary record-action-button" type="button" data-action="open-personal-input">${summary.hasInput ? "確認・変更" : "任意で入力"}</button></div>
     ${renderPersonalHiddenFields(record)}
   </section>`;

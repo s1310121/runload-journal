@@ -1,14 +1,13 @@
 import { escapeHtml, renderPageHeading } from "../ui/commonComponents.js";
 import { loadRecordInputWorkspace } from "../ui/recordInputWorkspace.js";
 import {
-  EQUIPMENT_TAG_OPTIONS,
-  FOCUS_TAG_OPTIONS,
-  FOOT_PLACEMENT_OPTIONS,
-  RHYTHM_STRIDE_OPTIONS,
+  ACTIVE_FOCUS_TAG_OPTIONS,
+  RETIRED_PERSONAL_CONTEXT_FIELD_NAMES,
   SHOE_SOFTNESS_OPTIONS,
   SHOE_TYPE_OPTIONS,
   mergePersonalContextFields,
   personalSummaryFromFields,
+  retiredPersonalContextDisplayItemsFromFields,
 } from "../ui/personalContextPresentation.js";
 
 function safeReturnTo(context) {
@@ -29,15 +28,25 @@ function renderOptions(options, currentValue) {
 }
 
 function renderFocusTags(fields) {
-  return FOCUS_TAG_OPTIONS.map((option) => `<label class="choice-card"><input type="checkbox" name="personalFocus_${escapeHtml(option.value)}" value="1"${checked(fields[`personalFocus_${option.value}`])}><span>${escapeHtml(option.label)}</span></label>`).join("");
-}
-
-function renderEquipmentTags(fields) {
-  return EQUIPMENT_TAG_OPTIONS.map((option) => `<label class="choice-card"><input type="checkbox" name="personalEquipment_${escapeHtml(option.value)}" value="1"${checked(fields[`personalEquipment_${option.value}`])}><span>${escapeHtml(option.label)}</span></label>`).join("");
+  return ACTIVE_FOCUS_TAG_OPTIONS.map((option) => `<label><input type="checkbox" name="personalFocus_${escapeHtml(option.value)}" value="1"${checked(fields[`personalFocus_${option.value}`])}><span><strong>${escapeHtml(option.label)}</strong></span></label>`).join("");
 }
 
 function savedShoeOptions(savedShoes = [], currentId = "") {
   return [`<option value="">保存シューズを使わない</option>`, ...savedShoes.map((shoe) => `<option value="${escapeHtml(shoe.id)}"${selected(currentId, shoe.id)}>${escapeHtml(shoe.label || "名称なし")}</option>`)].join("");
+}
+
+function renderRetiredFields(fields) {
+  return RETIRED_PERSONAL_CONTEXT_FIELD_NAMES.map((name) => {
+    const isCheckbox = name.startsWith("personalFocus_") || name.startsWith("personalEquipment_");
+    if (isCheckbox) return `<input type="checkbox" name="${escapeHtml(name)}" value="1"${checked(fields[name])} hidden>`;
+    return `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(fields[name] || "")}">`;
+  }).join("");
+}
+
+function renderLegacyReadOnly(fields) {
+  const items = retiredPersonalContextDisplayItemsFromFields(fields);
+  if (!items.length) return "";
+  return `<details class="form-disclosure personal-legacy-disclosure"><summary><span>過去の補足情報 <small>以前の記録形式で保存された内容です。新しい入力では追加しません。</small></span></summary><div class="form-disclosure__content"><dl class="fact-grid">${items.map(([label, value]) => `<div class="fact-grid__wide"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl><p class="muted-text">この内容は過去記録との互換のため保持します。「この補足記録を空にする」を選ぶと、今回の編集では一緒に消去できます。</p></div></details>`;
 }
 
 export function renderPersonalInputScreen({ services, context }) {
@@ -47,46 +56,48 @@ export function renderPersonalInputScreen({ services, context }) {
   const summary = personalSummaryFromFields(fields);
   const settings = services?.storage?.settings?.load?.() || {};
   const savedShoes = Array.isArray(settings.savedShoes) ? settings.savedShoes : [];
+  const hasShoeDetail = Boolean(fields.personalShoeType || fields.personalShoeSoftness);
 
   return `<section class="screen screen--personal-input">
-    <nav class="context-navigation" aria-label="シューズと走り方のメモ入力内の移動"><a class="body-part-detail__back-link" href="${escapeHtml(returnTo)}">今日の記録へ戻る</a></nav>
+    <nav class="context-navigation" aria-label="シューズと気づきメモ入力内の移動"><a class="body-part-detail__back-link" href="${escapeHtml(returnTo)}">今日の記録へ戻る</a></nav>
     ${renderPageHeading({
       eyebrow: "本人の補足記録",
-      title: "シューズと走り方のメモ",
-      description: "履いたシューズと、自分で気づいた走り方を分けて残します。正確なフォーム判定ではなく、あとで似た記録を探すための任意情報です。",
+      title: "シューズと気づきメモ",
+      description: "必要なものだけ任意で残します。シューズ、今日意識したこと、あとで振り返りたい気づきを簡潔に記録できます。",
     })}
     <form id="personal-input-form" class="record-form personal-input-form" data-return-to="${escapeHtml(returnTo)}" novalidate>
       <div class="form-messages" data-form-messages tabindex="-1" hidden></div>
-      <section class="form-section personal-input-purpose" aria-labelledby="personal-summary-title"><div class="section-heading"><p>この画面で残すもの</p><h2 id="personal-summary-title">3種類の補足記録</h2></div><div class="personal-input-purpose__grid"><article><strong>シューズ</strong><span>名前・種類・やわらかさ</span></article><article><strong>本人の気づき</strong><span>足のつき方・歩幅・テンポ</span></article><article><strong>意識したこと</strong><span>今日試した内容と自由メモ</span></article></div><p class="section-introduction" data-personal-summary>${escapeHtml(summary.description)}</p></section>
+      ${renderRetiredFields(fields)}
 
-      <section class="form-section" aria-labelledby="personal-shoe-title"><div class="section-heading"><p>1. 使用したもの</p><h2 id="personal-shoe-title">シューズの記録</h2></div><p class="section-introduction">同じシューズを使った記録をあとで見つけるために、分かる範囲だけ残します。シューズだけで身体状態を判断しません。</p>
-        <label class="field"><span>保存シューズを使う（任意）</span><select name="personalShoeId" data-saved-shoe-select>${savedShoeOptions(savedShoes, fields.personalShoeId || "")}</select><small>選ぶと名前・種類・やわらかさを今回の入力へ反映します。過去記録は変わりません。</small></label>
+      <section class="form-section" aria-labelledby="personal-shoe-title">
+        <div class="section-heading"><p>1. 今日使ったもの</p><h2 id="personal-shoe-title">今日のシューズ</h2></div>
+        <p class="section-introduction">名前が分かれば、それだけで記録できます。種類ややわらかさは、必要なときだけ追加してください。</p>
+        <label class="field"><span>保存シューズを使う（任意）</span><select name="personalShoeId" data-saved-shoe-select>${savedShoeOptions(savedShoes, fields.personalShoeId || "")}</select><small>選ぶと保存済みの内容を今回の入力へ反映します。過去記録は変わりません。</small></label>
         <label class="field"><span>シューズ名・呼び名（任意）</span><input name="personalShoeLabel" type="text" maxlength="80" value="${escapeHtml(fields.personalShoeLabel || "")}" placeholder="例：いつもの黒い靴"></label>
-        <div class="field-grid field-grid--two">
-          <label class="field"><span>靴の種類</span><select name="personalShoeType">${renderOptions(SHOE_TYPE_OPTIONS, fields.personalShoeType)}</select></label>
-          <label class="field"><span>やわらかさ</span><select name="personalShoeSoftness">${renderOptions(SHOE_SOFTNESS_OPTIONS, fields.personalShoeSoftness)}</select></label>
-        </div>
+        <details class="form-disclosure personal-shoe-details"${hasShoeDetail ? " open" : ""}>
+          <summary><span>シューズの詳細を追加 <small>種類・やわらかさを必要なときだけ記録</small></span></summary>
+          <div class="form-disclosure__content field-grid field-grid--two">
+            <label class="field"><span>靴の種類</span><select name="personalShoeType">${renderOptions(SHOE_TYPE_OPTIONS, fields.personalShoeType)}</select></label>
+            <label class="field"><span>やわらかさ</span><select name="personalShoeSoftness">${renderOptions(SHOE_SOFTNESS_OPTIONS, fields.personalShoeSoftness)}</select></label>
+          </div>
+        </details>
+        <label class="choice-card"><input type="checkbox" name="saveCurrentShoePreset" value="1"><span><strong>今回のシューズを保存して次回も使う</strong><small>名前がある場合だけ、保存シューズへ追加します。</small></span></label>
       </section>
 
-      <section class="form-section" aria-labelledby="personal-run-title"><div class="section-heading"><p>2. 本人の気づき</p><h2 id="personal-run-title">自分で感じた走り方</h2></div><p class="section-introduction">測定やフォーム判定ではありません。自分で気づいた内容だけを選びます。</p>
-        <div class="field-grid field-grid--two">
-          <label class="field"><span>足のつき方（感じた範囲）</span><select name="personalFootPlacement">${renderOptions(FOOT_PLACEMENT_OPTIONS, fields.personalFootPlacement)}</select></label>
-          <label class="field"><span>歩幅・テンポ</span><select name="personalRhythmStride">${renderOptions(RHYTHM_STRIDE_OPTIONS, fields.personalRhythmStride)}</select></label>
-        </div>
-        <fieldset class="field-group"><legend>今日意識したこと・試したこと</legend><p class="field-help">本人が意識して行った内容だけを選びます。選ばなくても保存できます。</p><div class="choice-grid choice-grid--detail">${renderFocusTags(fields)}</div></fieldset>
+      <section class="form-section" aria-labelledby="personal-focus-title">
+        <div class="section-heading"><p>2. 今日の意識</p><h2 id="personal-focus-title">今日意識したこと</h2></div>
+        <p class="section-introduction">当てはまるものだけ選べます。複数選択できますが、何も選ばなくても構いません。</p>
+        <fieldset class="field-group"><legend>意識したこと・試したこと</legend><div class="checkbox-grid personal-focus-list">${renderFocusTags(fields)}</div></fieldset>
       </section>
 
-      <section class="form-section" aria-labelledby="personal-equipment-title"><div class="section-heading"><p>3. 装備</p><h2 id="personal-equipment-title">携行品と装備</h2></div><p class="section-introduction">数値結果には使わず、同じ条件の記録を探すために保存します。</p>
-        <fieldset class="field-group"><legend>使用した装備・携行品</legend><div class="choice-grid choice-grid--detail">${renderEquipmentTags(fields)}</div></fieldset>
-        <label class="field"><span>装備メモ（任意）</span><textarea name="personalEquipmentNote" maxlength="240" rows="3">${escapeHtml(fields.personalEquipmentNote || "")}</textarea></label>
+      <section class="form-section" aria-labelledby="personal-note-title">
+        <div class="section-heading"><p>3. あとで振り返る</p><h2 id="personal-note-title">今日の気づきメモ</h2></div>
+        <label class="field"><span>気づきメモ（任意）</span><textarea name="personalFreeNote" maxlength="240" rows="4" placeholder="例：今日は新しいシューズを試した。後半はテンポを意識した。">${escapeHtml(fields.personalFreeNote || "")}</textarea><small>シューズ、装備、走り方など、あとで振り返りたいことを自由に残せます。文章メモは数値結果には使いません。</small></label>
       </section>
 
-      <section class="form-section" aria-labelledby="personal-note-title"><div class="section-heading"><p>4. 自由メモ</p><h2 id="personal-note-title">本人の気づきメモ</h2></div>
-        <label class="field"><span>本人の気づきメモ（任意）</span><textarea name="personalFreeNote" maxlength="240" rows="4" placeholder="例：足音を小さくするように走った">${escapeHtml(fields.personalFreeNote || "")}</textarea><small>文章メモは数値結果には使わず、見返しや相談用に残します。</small></label>
-        <label class="choice-card"><input type="checkbox" name="saveCurrentShoePreset" value="1"><span><strong>今回のシューズを保存して次回も使う</strong><small>名前がある場合だけ、プロフィールの保存シューズへ追加します。</small></span></label>
-      </section>
+      ${renderLegacyReadOnly(fields)}
 
-      <div class="form-submit-area"><div><strong>シューズと走り方のメモを入力へ反映</strong><p>分からない項目は、未入力のまま残せます。</p></div><div class="form-submit-actions"><button class="button button--primary" type="submit">入力へ反映して戻る</button><button class="button button--text" type="button" data-action="clear-personal-context">この補足記録を空にする</button></div></div>
+      <div class="form-submit-area"><div><strong>補足記録を今回の入力へ反映</strong><p>すべて任意です。必要なものだけ入力してください。</p><p class="muted-text" data-personal-summary>${escapeHtml(summary.description)}</p></div><div class="form-submit-actions"><button class="button button--primary" type="submit">入力へ反映して戻る</button><button class="button button--text" type="button" data-action="clear-personal-context">この補足記録を空にする</button></div></div>
     </form>
   </section>`;
 }

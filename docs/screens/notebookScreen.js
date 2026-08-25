@@ -154,7 +154,7 @@ function renderOneThingEditor(page, recommendedTheme = "") {
       ${ONE_THING_THEME_OPTIONS.map((option) => `<label class="notebook-theme-chip ${themeClassName(option.value)}"><input type="radio" name="oneThingTheme" value="${escapeHtml(option.value)}"${checked(currentTheme === option.value)}><span class="notebook-theme-chip__icon" aria-hidden="true">${renderThemeIcon(option.icon)}</span><span class="notebook-theme-chip__text"><strong>${escapeHtml(option.label)}</strong><small>${escapeHtml(option.hint)}</small></span></label>`).join("")}
     </fieldset>
     <label class="field"><span>今日の記録ノートに残す1行</span><textarea name="oneThingNote" maxlength="160" rows="3" placeholder="例：今日は最後まで余裕を残せた。次も同じくらいで試す。">${escapeHtml(page.oneThingNote || "")}</textarea></label>
-    <p class="source-boundary">記録ノートは文章を解析しません。本人が選んだ残す内容と1行を保存します。</p>
+    <details class="notebook-reading-disclosure notebook-reading-disclosure--compact"><summary>保存される内容を確認</summary><div><p>記録ノートは文章を解析しません。本人が選んだ残す内容と1行を保存します。</p></div></details>
   </section>`;
 }
 
@@ -183,7 +183,7 @@ function renderNotebookNavigation(workflowContext, view) {
 }
 
 function renderNotebookStartGuide() {
-  return `<aside class="notebook-role-boundary" data-information-role="personal" data-notebook-continuity-version="${escapeHtml(NOTEBOOK_CONTINUITY_VERSION)}" aria-label="履歴との違い"><p>本人が選んで残す</p><h2>記録ノートと履歴は役割が異なります</h2><p>履歴には走行事実と数値結果が自動保存されます。ここには、自分で選んだテーマと1行だけを残します。</p><p>連続日数、達成バッジ、距離・速度の順位は作りません。休養日や活動記録がない日も同じように残せます。</p></aside>`;
+  return `<aside class="notebook-role-boundary" data-information-role="personal" data-notebook-continuity-version="${escapeHtml(NOTEBOOK_CONTINUITY_VERSION)}" aria-label="履歴との違い"><p>本人が選んで残す</p><h2>記録ノートと履歴は役割が異なります</h2><p>履歴には走行事実と数値結果が自動保存され、ここには自分で選んだテーマと1行だけを残します。</p><details class="notebook-reading-disclosure"><summary>記録ノートの考え方を確認</summary><div><p>連続日数、達成バッジ、距離・速度の順位は作りません。休養日や活動記録がない日も同じように残せます。</p></div></details></aside>`;
 }
 
 function renderDayTypeBadge(pageView) {
@@ -194,7 +194,7 @@ function renderDayTypeBadge(pageView) {
 function renderReviewReferenceEditor(context) {
   const page = context.pageView.page;
   const candidates = context.reviewCandidates || [];
-  return `<section class="notebook-review-reference" aria-labelledby="notebook-review-reference-title"><div class="section-heading section-heading--compact"><p>任意の見返し</p><h3 id="notebook-review-reference-title">前のノートを1つだけ結び付ける</h3></div><label class="field"><span>見返すノート（任意）</span><select name="reviewReferenceDate"><option value="">結び付けない</option>${candidates.map((candidate) => `<option value="${escapeHtml(candidate.page.date)}"${selected(page.reviewReferenceDate === candidate.page.date)}>${escapeHtml(formatLocalDate(candidate.page.date))}／${escapeHtml(oneThingThemeLabel(candidate.page.oneThingTheme))}／${escapeHtml(String(candidate.page.oneThingNote || candidate.displayTitle).slice(0, 44))}</option>`).join("")}</select></label><p class="source-boundary">候補は過去に本人が書いたノートだけです。アプリは最適なノートを選ばず、変化や良し悪しも判定しません。</p></section>`;
+  return `<section class="notebook-review-reference" aria-labelledby="notebook-review-reference-title"><div class="section-heading section-heading--compact"><p>任意の見返し</p><h3 id="notebook-review-reference-title">前のノートを1つだけ結び付ける</h3></div><label class="field"><span>見返すノート（任意）</span><select name="reviewReferenceDate"><option value="">結び付けない</option>${candidates.map((candidate) => `<option value="${escapeHtml(candidate.page.date)}"${selected(page.reviewReferenceDate === candidate.page.date)}>${escapeHtml(formatLocalDate(candidate.page.date))}／${escapeHtml(oneThingThemeLabel(candidate.page.oneThingTheme))}／${escapeHtml(String(candidate.page.oneThingNote || candidate.displayTitle).slice(0, 44))}</option>`).join("")}</select></label><details class="notebook-reading-disclosure notebook-reading-disclosure--compact"><summary>見返し機能の扱いを確認</summary><div><p>候補は過去に本人が書いたノートだけです。アプリは最適なノートを選ばず、変化や良し悪しも判定しません。</p></div></details></section>`;
 }
 
 function renderReviewReferenceReader(context) {

@@ -28,7 +28,7 @@
 .status-label--neutral { background: var(--color-neutral-soft); color: var(--color-ink); }
 .status-label--model { background: var(--color-model-soft); color: var(--color-model); }
 .status-label--attention { background: var(--color-attention-soft); color: var(--color-attention); }
-.status-label--success { background: var(--color-accent-soft); color: var(--color-accent-strong); }
+.status-label--success { background: var(--color-success-soft); color: var(--color-success); }
 .text-link { display: inline-flex; min-height: var(--touch-target); align-items: center; color: var(--color-accent-strong); font-weight: 800; text-decoration-thickness: 1px; text-underline-offset: 0.22em; }
 .field { display: grid; gap: var(--space-2); min-width: 0; }
 .field > span, .fieldset-field legend, .field-group legend { font-weight: 800; }
@@ -42,13 +42,13 @@
 .segmented-control label { position: relative; }
 .segmented-control input { position: absolute; opacity: 0; pointer-events: none; }
 .segmented-control span { min-height: 3rem; display: grid; place-items: center; padding: var(--space-2); border: 1px solid var(--color-line); border-radius: var(--radius-small); background: var(--color-surface); font-weight: 800; }
-.segmented-control input:checked + span { border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-accent-strong); }
+.segmented-control input:checked + span { border-color: var(--color-selection-border); background: var(--color-selection-surface); color: var(--color-accent-strong); }
 .choice-grid { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
 .choice-card { position: relative; min-width: 0; display: grid; grid-template-columns: var(--control-choice-size) minmax(0, 1fr); align-items: start; gap: var(--control-choice-gap); min-height: 3.25rem; padding: var(--space-4); border: 1px solid var(--color-line); border-radius: var(--radius-medium); background: var(--color-surface); cursor: pointer; }
 .choice-card input { margin-top: 0.18rem; }
 .choice-card span, .choice-card strong, .choice-card small { display: block; }
 .choice-card small { margin-top: var(--space-1); color: var(--color-muted); }
-.choice-card:has(input:checked) { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.choice-card:has(input:checked) { border-color: var(--color-selection-border); background: var(--color-selection-surface); }
 .choice-card--safety:has(input:checked) { border-color: var(--color-attention-border); background: var(--color-attention-soft); }
 
 /* UI consistency V1.2: one shared pattern for visible checkbox rows. */
@@ -75,8 +75,8 @@
 .checkbox-grid > label > input { margin-top: 0.16rem; }
 .checkbox-grid > label > span { min-width: 0; line-height: 1.55; }
 .checkbox-grid > label:has(input:checked) {
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
+  border-color: var(--color-selection-border);
+  background: var(--color-selection-surface);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent);
 }
 .checkbox-grid > label:has(input:focus-visible) {
@@ -91,7 +91,7 @@
 .form-disclosure__content, .evidence-disclosure > div { display: grid; gap: var(--space-5); padding: 0 var(--space-5) var(--space-5); }
 .form-messages { padding: var(--space-4); border-radius: var(--radius-medium); }
 .form-messages--error { border: 1px solid var(--color-danger-border); background: var(--color-danger-soft); color: var(--color-danger); }
-.form-messages--success { border: 1px solid var(--color-accent); background: var(--color-accent-soft); }
+.form-messages--success { border: 1px solid var(--color-success-border); background: var(--color-success-soft); color: var(--color-success); }
 .form-messages p { font-weight: 800; }
 .form-submit-area { display: grid; gap: var(--space-3); justify-items: start; padding: var(--space-5); border-top: 3px solid var(--color-ink); background: var(--color-surface); }
 .form-submit-area p { color: var(--color-muted); }
@@ -165,8 +165,8 @@
 .history-item__memo { padding-left: var(--space-3); border-left: 3px solid var(--color-line); color: var(--color-muted); }
 .history-item__actions, .saved-plan__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .undo-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-4); border: 1px solid var(--color-accent); border-radius: var(--radius-medium); background: var(--color-accent-soft); }
-.button--danger { border-color: var(--color-attention-border); color: var(--color-attention); background: var(--color-danger-soft); }
-.button--danger:hover { background: var(--color-attention-soft); }
+.button--danger { border-color: var(--color-danger-border); color: var(--color-danger); background: var(--color-danger-soft); }
+.button--danger:hover { background: color-mix(in srgb, var(--color-danger-soft) 78%, var(--color-danger)); }
 .plan-candidate-grid { display: grid; gap: var(--space-4); }
 .plan-candidate { display: grid; gap: var(--space-4); padding: var(--space-5); border: 1px solid var(--color-line); border-radius: var(--radius-large); background: var(--color-surface); }
 .plan-candidate.is-selected { border-color: var(--color-accent); box-shadow: 0 0 0 3px var(--color-accent-soft); }
@@ -195,8 +195,8 @@
 .article-body { display: grid; gap: var(--space-5); font-size: 1.05rem; line-height: 1.9; }
 .article-sources { display: grid; gap: var(--space-4); padding-top: var(--space-5); border-top: 2px solid var(--color-ink); }
 .article-sources article { padding: var(--space-4); border: 1px solid var(--color-line); }
-.danger-zone { border-color: var(--color-attention-border); background: var(--color-surface-warm); }
-.danger-zone summary { min-height: 3rem; display: flex; align-items: center; cursor: pointer; font-weight: 850; color: var(--color-attention); }
+.danger-zone { border-color: var(--color-danger-border); background: var(--color-danger-soft); }
+.danger-zone summary { min-height: 3rem; display: flex; align-items: center; cursor: pointer; font-weight: 850; color: var(--color-danger); }
 .danger-zone > div { display: grid; gap: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--color-danger-line); }
 .plan-edit-preview, .plan-outcome-editor, .consult-selector, .editorial-boundary {
   display: grid;

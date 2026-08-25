@@ -18,6 +18,22 @@ function checkedValue(value) {
   return value === true || value === "1" || value === "on" || value === "true";
 }
 
+export const ACTIVE_FOCUS_TAG_VALUES = Object.freeze([
+  "relax",
+  "small_step",
+  "rhythm",
+  "posture",
+  "quiet_landing",
+]);
+
+export const ACTIVE_FOCUS_TAG_OPTIONS = Object.freeze(
+  FOCUS_TAG_OPTIONS.filter((option) => ACTIVE_FOCUS_TAG_VALUES.includes(option.value)),
+);
+
+const RETIRED_FOCUS_TAG_VALUES = Object.freeze(
+  FOCUS_TAG_OPTIONS.map((option) => option.value).filter((value) => !ACTIVE_FOCUS_TAG_VALUES.includes(value)),
+);
+
 export const PERSONAL_CONTEXT_FIELD_NAMES = Object.freeze([
   "personalShoeId",
   "personalShoeLabel",
@@ -29,6 +45,14 @@ export const PERSONAL_CONTEXT_FIELD_NAMES = Object.freeze([
   "personalFreeNote",
   ...EQUIPMENT_TAG_OPTIONS.map((option) => `personalEquipment_${option.value}`),
   ...FOCUS_TAG_OPTIONS.map((option) => `personalFocus_${option.value}`),
+]);
+
+export const RETIRED_PERSONAL_CONTEXT_FIELD_NAMES = Object.freeze([
+  "personalFootPlacement",
+  "personalRhythmStride",
+  "personalEquipmentNote",
+  ...EQUIPMENT_TAG_OPTIONS.map((option) => `personalEquipment_${option.value}`),
+  ...RETIRED_FOCUS_TAG_VALUES.map((value) => `personalFocus_${value}`),
 ]);
 
 export function personalContextFieldsFromRecord(record = {}) {
@@ -103,6 +127,21 @@ export function personalContextDisplayItems(context = {}) {
   if (normalized.equipmentTags.length) items.push(["装備", normalized.equipmentTags.map((tag) => EQUIPMENT_TAG_OPTIONS.find((option) => option.value === tag)?.label || tag).join("、")]);
   if (normalized.equipmentNote) items.push(["装備メモ", normalized.equipmentNote]);
   if (normalized.freeNote) items.push(["走り方メモ", normalized.freeNote]);
+  return items;
+}
+
+export function retiredPersonalContextDisplayItemsFromFields(fields = {}) {
+  const normalized = personalContextFromFields(fields);
+  if (!normalized) return [];
+  const items = [];
+  if (normalized.footPlacement) items.push(["足のつき方", labelForOption(normalized.footPlacement, FOOT_PLACEMENT_OPTIONS)]);
+  if (normalized.rhythmStride) items.push(["歩幅・テンポ", labelForOption(normalized.rhythmStride, RHYTHM_STRIDE_OPTIONS)]);
+  const retiredFocus = normalized.focusTags.filter((tag) => RETIRED_FOCUS_TAG_VALUES.includes(tag));
+  if (retiredFocus.length) {
+    items.push(["過去の意識項目", retiredFocus.map((tag) => FOCUS_TAG_OPTIONS.find((option) => option.value === tag)?.label || tag).join("、")]);
+  }
+  if (normalized.equipmentTags.length) items.push(["装備", normalized.equipmentTags.map((tag) => EQUIPMENT_TAG_OPTIONS.find((option) => option.value === tag)?.label || tag).join("、")]);
+  if (normalized.equipmentNote) items.push(["装備メモ", normalized.equipmentNote]);
   return items;
 }
 
