@@ -4,7 +4,12 @@ import {
   createV27ResultRecord,
   upsertV27ResultRecord,
 } from "../model/v27/v27ResultService.js";
-import { createRegionalV1ResultRecord, upsertRegionalV1ResultRecord } from "../model/regionalV1/regionalV1ResultService.js";
+import { createRegionalV1ResultRecord, upsertRegionalV1ResultRecord, REGIONAL_V1_MODEL_VERSION } from "../model/regionalV1/regionalV1ResultService.js";
+import { createNewModelV1ResultRecord, upsertNewModelV1ResultRecord, NEW_MODEL_V1_MODEL_VERSION, validateNewModelV1ResultRecord } from "../model/newModelV1/newModelV1ResultService.js";
+import { createRegionalV1ResultRecord as createV25R1RegionalV1ResultRecord, REGIONAL_V1_MODEL_VERSION as V25R1_REGIONAL_V1_MODEL_VERSION } from "../model/v25r1Historical/regionalV1ResultService.js";
+import { createRegionalV1ResultRecord as createFcrV19RegionalV1ResultRecord, REGIONAL_V1_MODEL_VERSION as FCR_V19_REGIONAL_V1_MODEL_VERSION } from "../model/regionalV1/fcrV19ResultService.js";
+import { createRegionalV1ResultRecord as createLegacyPhase4RegionalV1ResultRecord, REGIONAL_V1_MODEL_VERSION as LEGACY_PHASE4_REGIONAL_V1_MODEL_VERSION } from "../model/regionalV1/legacyPhase4ResultService.js";
+import { isNewModelV1RegionalModelRecord, isV26C1RegionalModelRecord, isV25R1RegionalModelRecord, isFcrV19RegionalModelRecord, stampCurrentRegionalModel } from "../model/regionalV1/regionalModelSnapshot.js";
 import { validateRegionalEngineOutput } from "../model/regionalV1/engine/validation.js";
 import { normalizeRunningRecord, validateRunningRecord, validateRunningRecordInput } from "../safety/inputValidation.js";
 import { normalizeSubjectiveFeedback } from "../safety/subjectiveFeedback.js";
@@ -36,6 +41,34 @@ function upsertById(items, item, getId) {
   return nextItems;
 }
 
+function regionalResultCreatorForRecord(record = {}) {
+  if (isNewModelV1RegionalModelRecord(record)) return createNewModelV1ResultRecord;
+  if (isV26C1RegionalModelRecord(record)) return createRegionalV1ResultRecord;
+  if (isV25R1RegionalModelRecord(record)) return createV25R1RegionalV1ResultRecord;
+  if (isFcrV19RegionalModelRecord(record)) return createFcrV19RegionalV1ResultRecord;
+  return createLegacyPhase4RegionalV1ResultRecord;
+}
+
+function regionalModelVersionForRecord(record = {}) {
+  if (isNewModelV1RegionalModelRecord(record)) return NEW_MODEL_V1_MODEL_VERSION;
+  if (isV26C1RegionalModelRecord(record)) return REGIONAL_V1_MODEL_VERSION;
+  if (isV25R1RegionalModelRecord(record)) return V25R1_REGIONAL_V1_MODEL_VERSION;
+  if (isFcrV19RegionalModelRecord(record)) return FCR_V19_REGIONAL_V1_MODEL_VERSION;
+  return LEGACY_PHASE4_REGIONAL_V1_MODEL_VERSION;
+}
+
+function storedRegionalResultForRecord(repository, record = {}) {
+  const expectedVersion = regionalModelVersionForRecord(record);
+  const rows = repository?.loadForRecord?.(record.id) || [];
+  return [...rows]
+    .filter((item) => item?.model_version === expectedVersion)
+    .sort((left, right) => (
+      String(right.source_record_revision || "").localeCompare(String(left.source_record_revision || ""))
+      || String(right.generated_at || "").localeCompare(String(left.generated_at || ""))
+      || String(right.id || "").localeCompare(String(left.id || ""))
+    ))[0] || null;
+}
+
 function createModelExperience(
   records,
   subjectiveFeedback,
@@ -49,22 +82,25 @@ function createModelExperience(
   const record = sortedRecords[index];
   const v27ByRecord = modelResultV27Repository?.latestByRecord?.() || new Map();
   const v27ResultRecord = v27ByRecord.get(targetRecordId) || null;
-  const storedRegionalV1ResultRecord = modelResultRegionalV1Repository?.latestByRecord?.().get(targetRecordId) || null;
+  const storedRegionalV1ResultRecord = storedRegionalResultForRecord(modelResultRegionalV1Repository, record);
   const feedback = subjectiveFeedback.find((item) => item.recordId === targetRecordId) || null;
   let regionalV1ResultRecord = storedRegionalV1ResultRecord;
   let regionalV1Recovery = null;
   if (storedRegionalV1ResultRecord) {
-    const validation = validateRegionalEngineOutput(storedRegionalV1ResultRecord.result || {});
+    const newModelStored = storedRegionalV1ResultRecord.model_version === NEW_MODEL_V1_MODEL_VERSION;
+    const newValidation = newModelStored ? validateNewModelV1ResultRecord(storedRegionalV1ResultRecord) : null;
+    const validation = newModelStored ? { valid: newValidation.valid, issues: newValidation.issues.map((code) => ({ code })) } : validateRegionalEngineOutput(storedRegionalV1ResultRecord.result || {});
     const bodyMapRegions = storedRegionalV1ResultRecord.body_map_payload?.regions;
-    const bodyMapValid = Array.isArray(bodyMapRegions) && bodyMapRegions.length === 12;
+    const bodyMapValid = newModelStored && storedRegionalV1ResultRecord.result?.state === "BASELINE_OOD" ? true : (Array.isArray(bodyMapRegions) && bodyMapRegions.length === 12);
     if (!validation.valid || !bodyMapValid) {
       const sessionSequence = sortedRecords
         .filter((item) => item.date === record.date)
         .findIndex((item) => item.id === record.id) + 1;
-      const recovered = createRegionalV1ResultRecord({
+      const recovered = regionalResultCreatorForRecord(record)({
         record,
         feedback: feedback || {},
         sessionSequence: Math.max(1, sessionSequence),
+        allRecords: sortedRecords,
       });
       if (recovered.ok) {
         regionalV1ResultRecord = Object.freeze({
@@ -189,17 +225,19 @@ export function createRecordWorkflow({
     const bodyProfileSnapshot = normalizedProfile
       ? createBodyProfileSnapshot(normalizedProfile, nowIso)
       : existingRecord?.bodyProfileSnapshot || null;
-    const normalizedRecord = normalizeRunningRecord({
+    const versionedRecordInput = stampCurrentRegionalModel({
       ...recordInput,
       bodyProfileSnapshot,
       createdAt: existingRecord?.createdAt || recordInput.createdAt,
-    }, {
+    });
+    const normalizedRecordBase = normalizeRunningRecord(versionedRecordInput, {
       existingIds: currentRecords
         .filter((record) => record.id !== recordInput.id)
         .map((record) => record.id),
       nowIso,
       assumeExplicitRpe: true,
     });
+    const normalizedRecord = stampCurrentRegionalModel(normalizedRecordBase);
     const recordValidation = validateRunningRecord(normalizedRecord);
     if (!recordValidation.ok) {
       return {
@@ -247,15 +285,18 @@ export function createRecordWorkflow({
       currentV27Results,
       calculation.resultRecord,
     );
-    const regionalCalculation = createRegionalV1ResultRecord({
+    const regionalCalculation = regionalResultCreatorForRecord(normalizedRecord)({
       record: normalizedRecord,
       feedback: normalizedFeedback,
       sessionSequence: nextRecords.filter((item) => item.date === normalizedRecord.date).findIndex((item) => item.id === normalizedRecord.id) + 1,
+      allRecords: nextRecords,
     });
     if (!regionalCalculation.ok) {
       return { ok: false, code: regionalCalculation.code || "REGIONAL_V1_RESULT_CREATION_FAILED", validation: regionalCalculation.validation || null, message: regionalCalculation.error?.messageKey || "" };
     }
-    const nextRegionalV1Results = upsertRegionalV1ResultRecord(currentRegionalV1Results, regionalCalculation.resultRecord);
+    const nextRegionalV1Results = isNewModelV1RegionalModelRecord(normalizedRecord)
+      ? upsertNewModelV1ResultRecord(currentRegionalV1Results, regionalCalculation.resultRecord)
+      : upsertRegionalV1ResultRecord(currentRegionalV1Results, regionalCalculation.resultRecord);
 
     const changes = [
       { key: STORAGE_KEYS.records, value: nextRecords },

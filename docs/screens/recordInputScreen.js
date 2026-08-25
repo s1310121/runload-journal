@@ -9,6 +9,48 @@ import { renderCourseSummary } from "../ui/coursePresentation.js";
 import { bodyPartKey, formatLocalDate } from "../ui/recordPresentation.js";
 import { HIERARCHICAL_EXPLANATION_VERSION, INPUT_PURPOSE_GUIDANCE } from "../ui/hierarchicalExplanation.js";
 
+
+const RUN_WALK_SURFACE_OPTIONS = Object.freeze([
+  ["PAVED", "paved", "舗装路"],
+  ["TRACK", "track", "陸上トラック"],
+  ["TREADMILL", "treadmill", "トレッドミル"],
+  ["SOIL", "soil", "締まった土道"],
+  ["TRAIL", "trail", "不整地トレイル"],
+  ["NATURAL_GRASS", "natural_grass", "天然芝"],
+  ["ARTIFICIAL_TURF", "artificial_turf", "人工芝"],
+  ["SAND", "sand", "砂地"],
+]);
+
+function runWalkSectionSurface(section = {}) {
+  const first = Array.isArray(section.surfaceComponents) ? section.surfaceComponents.find((item) => Number(item?.sharePercent) > 0) : null;
+  return String(first?.userCategory || "UNKNOWN").toUpperCase();
+}
+
+function renderRunWalkDetails(record = {}) {
+  const active = String(record.runningFormat || "UNKNOWN").toUpperCase() === "RUN_WALK";
+  const rows = Array.from({ length: 5 }, (_, index) => {
+    const section = Array.isArray(record.runWalkRunningSections) ? record.runWalkRunningSections[index] || {} : {};
+    const direction = String(section.gradeDirection || "FLAT").toUpperCase();
+    const grade = direction === "FLAT" ? 0 : Math.abs(Number(section.gradePercent || 0));
+    const surface = runWalkSectionSurface(section);
+    return `<div class="field-grid field-grid--four run-walk-section-row">
+      <label class="field field--compact"><span>走行区間${index + 1}・割合（%）</span><input name="runWalkSectionShare_${index}" type="number" min="0" max="100" step="0.1" value="${escapeHtml(section.sharePercent ?? "")}" placeholder="例：40"></label>
+      <label class="field field--compact"><span>勾配方向</span><select name="runWalkSectionDirection_${index}"><option value="FLAT"${selected(direction, "FLAT")}>平坦</option><option value="UPHILL"${selected(direction, "UPHILL")}>上り</option><option value="DOWNHILL"${selected(direction, "DOWNHILL")}>下り</option></select></label>
+      <label class="field field--compact"><span>勾配（%）</span><input name="runWalkSectionGrade_${index}" type="number" min="0" max="100" step="0.1" value="${escapeHtml(grade)}"></label>
+      <label class="field field--compact"><span>路面</span><select name="runWalkSectionSurface_${index}"><option value="UNKNOWN"${selected(surface, "UNKNOWN")}>未設定</option>${RUN_WALK_SURFACE_OPTIONS.map(([category, , label]) => `<option value="${category}"${selected(surface, category)}>${label}</option>`).join("")}</select></label>
+    </div>`;
+  }).join("");
+  return `<div class="run-walk-details" data-run-walk-fields${active ? "" : " hidden"}>
+    <div class="inline-helper inline-helper--important"><strong>RUN_WALKの部位別数値は「走った区間」を対象にします。</strong><p>歩いた区間を走行として推定しません。走った距離と時間を入力してください。</p></div>
+    <div class="field-grid field-grid--two">
+      <label class="field"><span>走った距離（km） <strong aria-label="RUN_WALK時は必須">RUN_WALK時は必須</strong></span><input name="runWalkRunningDistanceKm" type="number" min="0.01" max="10000" step="0.01" value="${escapeHtml(record.runWalkRunningDistanceKm ?? "")}" placeholder="例：4.0" data-run-walk-required></label>
+      <label class="field"><span>走った時間（分） <strong aria-label="RUN_WALK時は必須">RUN_WALK時は必須</strong></span><input name="runWalkRunningDurationMinutes" type="number" min="0.01" max="100000" step="0.1" value="${escapeHtml(record.runWalkRunningDurationMinutes ?? "")}" placeholder="例：25" data-run-walk-required></label>
+    </div>
+    <details class="record-run-walk-composition"><summary>走った区間の坂・路面内訳（mixed条件では必須）</summary><p class="field-help">全体のコースに複数の坂区間・路面がある場合、歩いた区間と混同しないよう、走った区間だけの割合を合計100%で入力します。区間ごとの速度は推定しません。</p>${rows}</details>
+    <p class="field-help">走行区間の平均速度が12部位の計算範囲2.25〜3.33 m/sを外れる場合は、保存前に注意を表示します。これは歩行・走行を自動判定する境界ではありません。</p>
+  </div>`;
+}
+
 function localToday() {
   const now = new Date();
   const year = now.getFullYear();
@@ -44,7 +86,7 @@ function renderCourseEntry(course = {}, isRest = false, { fromPlan = false } = {
   return `<section class="record-course-entry" id="record-course-entry" data-run-fields${isRest ? " hidden" : ""} aria-labelledby="record-course-entry-title">
     <div class="record-course-entry__heading"><div><p>保存コース</p><h3 id="record-course-entry-title">今回のコース</h3></div><span class="disclosure-status">${escapeHtml(courseStatus)}</span></div>
     ${renderCourseSummary(course, { headingLevel: 4, compact: true })}
-    <label class="field record-surface-condition"><span>今回の路面の濡れ・滑り</span><select name="surfaceWetSlipState"><option value="UNKNOWN"${course.surfaceWetSlipState === "UNKNOWN" || !course.surfaceWetSlipState ? " selected" : ""}>分からない・確認していない</option><option value="DRY"${course.surfaceWetSlipState === "DRY" ? " selected" : ""}>乾いている</option><option value="DAMP"${course.surfaceWetSlipState === "DAMP" ? " selected" : ""}>湿っている</option><option value="WET"${course.surfaceWetSlipState === "WET" ? " selected" : ""}>濡れている</option><option value="SLIPPERY_REPORTED"${course.surfaceWetSlipState === "SLIPPERY_REPORTED" ? " selected" : ""}>滑りやすさを感じた</option></select><small>保存コースには固定せず、今回の状態として記録します。</small></label>
+    <input type="hidden" name="surfaceWetSlipState" value="${escapeHtml(course.surfaceWetSlipState || "UNKNOWN")}" data-schema-legacy-keep="surfaceWetSlipState">
     ${renderPlanCourseLibrarySaveOption(course, { fromPlan, isRest })}
     <div class="record-course-entry__actions"><button class="button button--secondary record-action-button record-action-button--course" type="button" data-action="open-course-library">コースを選ぶ・作る</button></div>
   </section>`;
@@ -188,7 +230,7 @@ function renderRecoveryAndReflection(record = {}) {
   const consultation = record.consultationContext || {};
   const selectedData = new Set(Array.isArray(consultation.consultationDataSelection) ? consultation.consultationDataSelection : []);
   return `<div class="record-context-details">
-    <details class="record-optional-details"><summary><span><strong>睡眠・食事・生活背景</strong><small>本人の文脈として別に保存し、部位の条件応答へ混ぜません。</small></span></summary><div class="field-grid field-grid--two record-optional-details__body">
+    <details class="record-optional-details"><summary><span><strong>睡眠・食事・生活背景</strong><small>本人の文脈として別に保存し、12部位の比較値には数値として加えません。</small></span></summary><div class="field-grid field-grid--two record-optional-details__body">
       <label class="field"><span>睡眠の自己記録</span><input name="sleepSummary" maxlength="160" value="${escapeHtml(recovery.sleepSummary || "")}" placeholder="例：よく眠れた、短かった"></label>
       <label class="field"><span>食事・水分の自己記録</span><input name="nutritionHydrationSummary" maxlength="160" value="${escapeHtml(recovery.nutritionHydrationSummary || "")}" placeholder="例：走る前に水分を取った"></label>
       <label class="field field--wide"><span>生活背景メモ</span><textarea name="lifestyleNote" maxlength="500" rows="3">${escapeHtml(recovery.lifestyleNote || "")}</textarea></label>
@@ -305,6 +347,7 @@ export function renderRecordInputScreen({ services, context }) {
           <label class="field"><span>歩数の取得方法（任意）</span><select name="stepsProvenance"><option value="UNKNOWN"${selected(record.stepsProvenance, "UNKNOWN")}>不明・未設定</option><option value="DEVICE_MEASURED"${selected(record.stepsProvenance, "DEVICE_MEASURED")}>端末・時計で計測</option><option value="ESTIMATED"${selected(record.stepsProvenance, "ESTIMATED")}>推定・手入力</option></select><small>歩数を入力した場合に、計測値か推定値かを選びます。</small></label>
           <label class="field"><span>走行形式（任意） <small class="input-role-tag">走り方を振り返る</small></span><select name="runningFormat"><option value="UNKNOWN"${selected(record.runningFormat, "UNKNOWN")}>覚えていない・未設定</option><option value="CONTINUOUS_RUN"${selected(record.runningFormat, "CONTINUOUS_RUN")}>途中で歩かず走った</option><option value="RUN_WALK"${selected(record.runningFormat, "RUN_WALK")}>走りと歩きを混ぜた</option></select><small>途中で歩いたかを残します。分からなければ未設定のまま保存できます。</small></label>
         </div>
+        ${renderRunWalkDetails(record)}
         ${renderEnvironmentContext(record)}
         <p class="record-result-information-note" data-information-role="condition">距離と実走時間を入力すれば保存できます。保存後は、その日の走行条件と結果を一緒に確認できます。</p>
       </section>

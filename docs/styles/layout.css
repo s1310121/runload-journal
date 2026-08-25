@@ -60,7 +60,7 @@
   .feature-menu__group--mobile-core { display: none; }
 }
 
-/* Screen Architecture Candidate V2.2.3: on sufficiently wide desktops, shift the compact rail 1.5rem (24px) farther left while retaining a 1rem (16px) viewport inset. */
+/* Screen Architecture V2.5R1 integration: on sufficiently wide desktops, shift the compact rail 1.5rem (24px) farther left while retaining a 1rem (16px) viewport inset. */
 @media (min-width: 90rem) {
   .primary-navigation {
     left: max(1rem, calc((100vw - var(--content-width)) / 2 - 7.85rem));

@@ -107,12 +107,21 @@ function commonExposureText(row, semantic) {
   return "共通走行量：数値なし";
 }
 
+function a9EvidenceTierLabel(row) {
+  const tier = row?.a9ConditionEvidence?.supportTier;
+  if (tier === "PROVISIONAL_AUTHORIZED") return "限定的な推定";
+  if (tier === "FORMAL_DIRECT_IN_DOMAIN") return "文献条件内";
+  return null;
+}
+
 function semanticChips(row, semantic) {
   const exposure = regionalV1ExposureMeta(row);
   const coverage = regionalV1CoverageMeta(row);
   const chips = [];
   if (semantic?.regionalConditionResponse?.status === "SUPPORTED_NUMERIC") chips.push("走行条件を数値化");
   else chips.push("走行条件の数値なし");
+  const evidenceTier = a9EvidenceTierLabel(row);
+  if (evidenceTier) chips.push(evidenceTier);
   if (exposure.fallback) chips.push("走行量は一部情報から算出");
   if (coverage.state === "PARTIAL" && semantic?.regionalConditionResponse?.status === "SUPPORTED_NUMERIC") chips.push("一部条件を反映");
   return chips;
@@ -146,10 +155,10 @@ function renderPreviousComparison(comparison, enabled) {
     const change = Math.abs(points) < 1e-9
       ? "変化なし"
       : `${symbol} ${rounded > 0 ? "+" : ""}${rounded}ポイント`;
-    return `<span class="regional-result-row__previous" data-previous-comparison="comparable"><strong>前回の条件応答との比較 ${escapeHtml(change)}</strong><small>${escapeHtml(formatComparisonDate(comparison.previous?.date))}・同じ部位、同じ条件軸、同じ基準で比較</small></span>`;
+    return `<span class="regional-result-row__previous" data-previous-comparison="comparable"><strong>前回の条件応答との比較 ${escapeHtml(change)}</strong><small>${escapeHtml(formatComparisonDate(comparison.previous?.date))}・同じ部位、同じ比較指標、同じ基準で比較</small></span>`;
   }
   if (comparison?.status === "NO_COMPARABLE_CONDITION_RECORD") {
-    return '<span class="regional-result-row__previous" data-previous-comparison="not-comparable"><strong>条件応答の前回比較なし</strong><small>同じ条件軸・同じ基準で比べられる過去記録がありません</small></span>';
+    return '<span class="regional-result-row__previous" data-previous-comparison="not-comparable"><strong>条件応答の前回比較なし</strong><small>同じ比較指標・同じ基準で比べられる過去記録がありません</small></span>';
   }
   if (comparison?.status === "CURRENT_CONDITION_UNAVAILABLE") {
     return '<span class="regional-result-row__previous" data-previous-comparison="unavailable"><strong>条件応答の前回比較なし</strong><small>今回の走行条件による部位別応答を数値化していません</small></span>';
@@ -195,11 +204,11 @@ function unavailableReasonMessage(result = {}, rows = []) {
     .filter(Boolean));
   const message = messages[0] || "";
   if (message.includes("Distance is unavailable")) return "走行距離が確認できないため、部位別の走行量と条件応答を表示できません。保存した距離を確認してください。";
-  if (message.includes("Distance is outside")) return "走行距離が現在の表示対象（0.5〜20 km）の範囲外のため、部位別表示を作成できません。";
+  if (message.includes("Distance is outside")) return "走行距離などの入力条件が、この表示で数値化できる条件に合わないため、部位別数値を表示しません。保存した走行事実はそのまま確認できます。";
   if (message.includes("No route section")) return "今回の走行条件を確認できないため、部位別表示を作成できません。";
   if (message.includes("section speeds are unavailable")) return "平均ペースを確認できないため、部位別の条件応答を確認できません。距離と実走時間を確認してください。";
   if (message.includes("section speeds are outside")) return "今回の平均ペースが現在の表示対象外のため、部位別の条件応答を確認できません。";
-  if (result.overallCalculationState === "OUT_OF_SUPPORTED_RANGE") return "今回の走行条件が現在の表示対象範囲外です。";
+  if (result.overallCalculationState === "OUT_OF_SUPPORTED_RANGE" && !result.a9Integration?.numericFullResponseAvailable) return "今回の走行条件が現在の表示対象範囲外です。";
   return "今回の入力条件では、走行条件による部位別応答を数値化できません。全12部位表示で、走行量と各部位の対応状況を確認できます。";
 }
 
@@ -214,6 +223,21 @@ export function renderRegionalV1Card({ resultRecord, previousComparisons = {}, i
   }
   const rows = resultRecord?.result?.regions || [];
   const availableRows = rows.filter((row) => conditionIndexExact(semanticFor(resultRecord, row)) !== null);
+  const hasA9Provisional = rows.some((row) => row?.a9ConditionEvidence?.supportTier === "PROVISIONAL_AUTHORIZED");
+  const hasA9Direct = rows.some((row) => row?.a9ConditionEvidence?.supportTier === "FORMAL_DIRECT_IN_DOMAIN");
+  const a9TierNotice = hasA9Provisional
+    ? '<p class="inline-helper" data-a9-evidence-tier-notice="provisional"><strong>「限定的な推定」と表示する値があります。</strong> 公開された研究値を基準に、あらかじめ範囲を限定して延長した推定で、研究で直接測られた条件そのものではありません。</p>'
+    : hasA9Direct
+      ? '<p class="inline-helper" data-a9-evidence-tier-notice="direct"><strong>「文献条件内」と表示する値があります。</strong> 公開された研究の測定条件内の値またはその区間内の補間に基づきます。</p>'
+      : '';
+  const hasUnquantifiedSurface = rows.some((row) => (row?.a9ConditionEvidence?.surfaceDisposition || []).some((item) => item && item.numericSurfaceMainEffectApplied !== true && !["BASE_REFERENCE", "ENVIRONMENT_BASE_RESPONSE"].includes(String(item.surfaceDisposition || ""))));
+  const surfaceNotice = hasUnquantifiedSurface
+    ? '<p class="inline-helper" data-surface-effect-notice="unquantified"><strong>路面による独立した数値効果を未定量として扱う部位があります。</strong> 路面情報は記録と説明に残しますが、根拠が数値化を支えない部分を0や基準100として補いません。</p>'
+    : '';
+  const hasPersonalCadenceEffect = rows.some((row) => row?.a9ConditionEvidence?.cadenceDisposition?.numericEffectApplied === true);
+  const cadenceNotice = hasPersonalCadenceEffect
+    ? '<p class="inline-helper" data-cadence-effect-notice="personal-habitual"><strong>膝蓋大腿関節ストレス積算量／kmの表示だけ、本人の過去記録から同じ速度帯の普段の歩数ペースを確認できた場合に限り、歩数ペースの関係を限定的な推定として反映しています。</strong> 絶対的な歩数だけから効果を決めたり、ほかの11部位へ同じ効果を広げたりしません。</p>'
+    : '';
   const focused = focusRows(rows, resultRecord);
   const resolvedView = initialView === "all" ? "all" : "focus";
   const focusContent = focused.length
@@ -223,6 +247,9 @@ export function renderRegionalV1Card({ resultRecord, previousComparisons = {}, i
     <div class="result-card__heading"><div><p>走行条件に対する部位別応答</p><h2 id="distribution-title">部位ごとの条件応答</h2></div>${renderStatusLabel("条件応答を主表示", "model")}</div>
     <p class="inline-helper"><strong>ここでは走行量と走行条件を分けて表示します。</strong> 主な数値は、速度・勾配・路面などについて、その部位で根拠に基づく条件応答を数値化できた場合だけ表示します。走行量は各部位で別に確認できます。</p>
     <p class="inline-helper"><strong>100は安全値・正常値・平均値ではありません。</strong> 初心者平均でもありません。 数値がある部位について、その部位固有の条件応答の表示上の基準です。</p>
+    ${a9TierNotice}
+    ${surfaceNotice}
+    ${cadenceNotice}
     ${renderRecoveryNotice(resultRecord)}
     <div class="regional-v1-view-toggle" role="group" aria-label="表示する部位"><button type="button" data-regional-v1-view-button="focus" aria-pressed="${resolvedView === "focus"}">条件応答を数値化できた部位</button><button type="button" data-regional-v1-view-button="all" aria-pressed="${resolvedView === "all"}">全12部位</button></div>
     <p class="muted-text">「条件応答を数値化できた部位」は、根拠に基づいて数値化できた部位を身体図と同じ固定順で表示します。数値の大きさによる並べ替えや部位間ランキングはしません。</p>
@@ -237,7 +264,7 @@ export function renderRegionalV1Card({ resultRecord, previousComparisons = {}, i
     <details class="regional-claim-boundary"><summary>この表示と過去比較の読み方</summary><div>
       <p>部位ごとに値が表す内容が異なるため、別部位の数値を同じ物理単位として比べません。</p>
       <p>共通走行量は、距離・歩数・接触回数などの走行量側の情報です。条件応答の数値へ置き換えず、別に表示します。</p>
-      <p>前回比較は、同じ部位・同じ条件軸・同じ基準など、条件応答の意味が一致する最新の過去記録がある場合だけ表示します。</p>
+      <p>前回比較は、同じ部位・同じ比較指標・同じ基準・同じ対象範囲を持つ最新の過去記録がある場合だけ表示します。</p>
       <p>増減は良し悪し、改善・悪化、傷害リスク、走行の可否を意味しません。</p>
       <p>本人が入力した身体記録は別の情報として保存し、条件応答とは分けて確認します。</p>
     </div></details>

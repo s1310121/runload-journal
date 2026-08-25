@@ -47,6 +47,39 @@ export const SURFACE_FIELDS = Object.freeze([
   Object.freeze({ recordKey: "sandPercent", modelKey: "sand", legacyKey: "surface_sand_pct", label: "砂地" }),
 ]);
 
+export const FULL_RESPONSE_MAX_ABS_GRADE_PERCENT = 15;
+
+function surfaceEnvironmentForModelUse(component = {}) {
+  const componentId = String(component.componentId || component.surface || component.materialKey || "").trim().toUpperCase();
+  const userCategory = String(component.userCategory || component.category || "").trim().toUpperCase();
+  const runSetting = String(component.runSetting || "").trim().toUpperCase();
+  if (componentId === "TREADMILL" || userCategory === "TREADMILL" || runSetting === "TREADMILL") return "TREADMILL";
+  if (componentId || userCategory || (runSetting && runSetting !== "UNKNOWN")) return "OUTDOOR";
+  return "UNKNOWN";
+}
+
+export function hasTreadmillOutdoorSurfaceMixFromComponents(components = []) {
+  const positive = (Array.isArray(components) ? components : []).filter((item) => Number(item?.sharePercent ?? 0) > 0);
+  const environments = new Set(positive.map(surfaceEnvironmentForModelUse).filter((value) => value !== "UNKNOWN"));
+  return environments.has("TREADMILL") && environments.has("OUTDOOR");
+}
+
+export function hasTreadmillOutdoorSurfaceMixFromCourse(course = {}) {
+  const treadmill = Number(course?.treadmillPercent || course?.surface_treadmill_pct || 0) > 0;
+  if (!treadmill) return false;
+  return [
+    "pavedPercent", "trackPercent", "soilPercent", "trailPercent",
+    "naturalGrassPercent", "artificialTurfPercent", "sandPercent",
+    "surface_paved_pct", "surface_track_pct", "surface_soil_pct", "surface_trail_pct",
+    "surface_natural_grass_pct", "surface_artificial_turf_pct", "surface_sand_pct",
+  ].some((key) => Number(course?.[key] || 0) > 0);
+}
+
+export function gradeIsWithinFullResponseDomain(gradePercent) {
+  const value = Number(gradePercent);
+  return Number.isFinite(value) && Math.abs(value) <= FULL_RESPONSE_MAX_ABS_GRADE_PERCENT + 1e-12;
+}
+
 export const SURFACE_TRAITS = Object.freeze([
   "hardness",
   "grip",

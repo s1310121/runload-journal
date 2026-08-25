@@ -1,4 +1,5 @@
-import { SURFACE_FIELDS } from "../model/modelConstants.js";
+import { SURFACE_FIELDS, hasTreadmillOutdoorSurfaceMixFromCourse, hasTreadmillOutdoorSurfaceMixFromComponents } from "../model/modelConstants.js";
+import { normalizeRegionalModelSnapshot } from "../model/regionalV1/regionalModelSnapshot.js";
 import { roundNumber, toFiniteNumber } from "../model/numberUtilities.js";
 import { normalizePlainText, normalizeSingleLineText, INPUT_LIMITS } from "./inputSafety.js";
 import { normalizePersonalContext } from "../personal/personalContext.js";
@@ -292,6 +293,29 @@ export function validateRunningRecordInput(input = {}) {
     if (!["CONTINUOUS_RUN", "RUN_WALK", "UNKNOWN"].includes(runningFormat)) {
       errors.push({ field: "runningFormat", code: "INVALID_RUNNING_FORMAT", message: "走行形式を選び直してください。" });
     }
+    if (runningFormat === "RUN_WALK") {
+      const runD = Number(rawNumericValue(input, "runWalkRunningDistanceKm"));
+      const runT = Number(rawNumericValue(input, "runWalkRunningDurationMinutes"));
+      const totalD = Number(rawNumericValue(input, "distanceKm", "dist_km", "distKm"));
+      const totalT = Number(rawNumericValue(input, "durationMinutes", "time_min", "timeMin"));
+      if (!(runD > 0 && runD < totalD)) errors.push({ field: "runWalkRunningDistanceKm", code: "INVALID_RUN_WALK_RUNNING_DISTANCE", message: "RUN_WALKでは、走った距離を全体距離より小さい正の値で入力してください。" });
+      if (!(runT > 0 && runT < totalT)) errors.push({ field: "runWalkRunningDurationMinutes", code: "INVALID_RUN_WALK_RUNNING_DURATION", message: "RUN_WALKでは、走った時間を全体の実走時間より短い正の値で入力してください。" });
+      const rwSections = Array.isArray(input.runWalkRunningSections) ? input.runWalkRunningSections : [];
+      if (rwSections.length) {
+        const shares = rwSections.map((section) => Number(section?.sharePercent));
+        if (shares.some((value) => !Number.isFinite(value) || value <= 0 || value > 100) || Math.abs(shares.reduce((a,b)=>a+b,0) - 100) > 0.01) errors.push({ field: "runWalkRunningSections", code: "INVALID_RUN_WALK_RUNNING_SECTION_SHARES", message: "走った区間の割合は正の値で、合計100%にしてください。" });
+        if (rwSections.some((section) => {
+          const direction = String(section?.gradeDirection || "").toUpperCase();
+          const grade = Number(section?.gradePercent);
+          const directionInvalid = !["FLAT","UPHILL","DOWNHILL"].includes(direction);
+          const gradeInvalid = !Number.isFinite(grade) || grade < 0 || grade > 15;
+          const directionMagnitudeInvalid = direction === "FLAT" ? Math.abs(grade) > 1e-9 : ["UPHILL","DOWNHILL"].includes(direction) ? !(grade > 0) : false;
+          return directionInvalid || gradeInvalid || directionMagnitudeInvalid || !Array.isArray(section?.surfaceComponents) || !section.surfaceComponents.length;
+        })) errors.push({ field: "runWalkRunningSections", code: "RUN_WALK_RUNNING_SECTION_GRADE_OUT_OF_MODEL_USE_DOMAIN", message: "走った区間の勾配は、方向と0〜15%の確認範囲で入力してください。" });
+        const rwSurfaceComponents = rwSections.flatMap((section) => Array.isArray(section?.surfaceComponents) ? section.surfaceComponents : []);
+        if (hasTreadmillOutdoorSurfaceMixFromComponents(rwSurfaceComponents)) errors.push({ field: "runWalkRunningSections", code: "TREADMILL_OUTDOOR_MIX_FORBIDDEN", message: "トレッドミルと屋外路面は、同じ走行の路面割合として混ぜて入力できません。" });
+      }
+    }
     const stepsProvenance = String(input.stepsProvenance || input.cadenceProvenance || "UNKNOWN").toUpperCase();
     if (!["DEVICE_MEASURED", "DEVICE_SYNCED", "ESTIMATED", "UNKNOWN"].includes(stepsProvenance)) {
       errors.push({ field: "stepsProvenance", code: "INVALID_STEPS_PROVENANCE", message: "歩数の取得方法を選び直してください。" });
@@ -312,6 +336,9 @@ export function validateRunningRecordInput(input = {}) {
         errors.push({ field: "course", code: "INVALID_SURFACE_PERCENT", message: "路面割合は0〜100で入力してください。" });
       } else if (Math.abs(surfaceSum - 100) > 1e-9) {
         errors.push({ field: "course", code: "SURFACE_SUM_NOT_100", message: "路面の合計を100%にしてください。", details: { surfaceSum } });
+      }
+      if (hasTreadmillOutdoorSurfaceMixFromCourse(rawCourse)) {
+        errors.push({ field: "course", code: "TREADMILL_OUTDOOR_MIX_FORBIDDEN", message: "トレッドミルと屋外路面は、同じ走行の路面割合として混ぜて入力できません。" });
       }
     }
     validateV27CourseInput(errors, input);
@@ -372,6 +399,22 @@ export function normalizeRunningRecord(input = {}, options = {}) {
       : ["CONTINUOUS_RUN", "RUN_WALK", "UNKNOWN"].includes(String(input.runningFormat || input.activityFormat || "UNKNOWN").toUpperCase())
         ? String(input.runningFormat || input.activityFormat || "UNKNOWN").toUpperCase()
         : "UNKNOWN",
+    runWalkRunningDistanceKm: isRest || String(input.runningFormat || input.activityFormat || "UNKNOWN").toUpperCase() !== "RUN_WALK"
+      ? null : (Number.isFinite(Number(input.runWalkRunningDistanceKm)) && Number(input.runWalkRunningDistanceKm) > 0 ? roundNumber(Number(input.runWalkRunningDistanceKm), 3) : null),
+    runWalkRunningDurationMinutes: isRest || String(input.runningFormat || input.activityFormat || "UNKNOWN").toUpperCase() !== "RUN_WALK"
+      ? null : (Number.isFinite(Number(input.runWalkRunningDurationMinutes)) && Number(input.runWalkRunningDurationMinutes) > 0 ? Number(input.runWalkRunningDurationMinutes) : null),
+    runWalkRunningSections: isRest || String(input.runningFormat || input.activityFormat || "UNKNOWN").toUpperCase() !== "RUN_WALK"
+      ? Object.freeze([])
+      : Object.freeze((Array.isArray(input.runWalkRunningSections) ? input.runWalkRunningSections : []).map((section, index) => Object.freeze({
+          sectionId: normalizeSingleLineText(section?.sectionId, 80) || `running-phase-${index + 1}`,
+          sharePercent: Number(section?.sharePercent),
+          gradeKnown: section?.gradeKnown === true,
+          gradePercent: Number(section?.gradePercent),
+          gradeDirection: ["FLAT","UPHILL","DOWNHILL"].includes(String(section?.gradeDirection || "").toUpperCase()) ? String(section.gradeDirection).toUpperCase() : "UNKNOWN",
+          surfaceComponents: Object.freeze((Array.isArray(section?.surfaceComponents) ? section.surfaceComponents : []).map((item) => Object.freeze({
+            componentId: normalizeSingleLineText(item?.componentId, 80), sharePercent: Number(item?.sharePercent), userCategory: normalizeSingleLineText(item?.userCategory, 80).toUpperCase(),
+          }))),
+        }))),
     stepsProvenance: isRest
       ? "NOT_APPLICABLE"
       : ["DEVICE_MEASURED", "DEVICE_SYNCED", "ESTIMATED", "UNKNOWN"].includes(String(input.stepsProvenance || input.cadenceProvenance || "UNKNOWN").toUpperCase())
@@ -396,6 +439,7 @@ export function normalizeRunningRecord(input = {}, options = {}) {
     recoveryContext: normalizeContextObject(input.recoveryContext, { sleepSummary: "line", nutritionHydrationSummary: "line", lifestyleNote: 500 }),
     reflectionContext: normalizeContextObject(input.reflectionContext, { postRunReflection: 500, perceivedDifference: 500, reflectionKeyPoint: 500, nextCheckPoint: 500 }),
     consultationContext: normalizeContextObject(input.consultationContext, { consultationTarget: "line", consultationQuestion: 500, consultationDataSelection: "tags" }),
+    regionalModelSnapshot: normalizeRegionalModelSnapshot(input.regionalModelSnapshot),
     createdAt: normalizeSingleLineText(input.createdAt, 50) || nowIso,
     updatedAt: nowIso,
   });
@@ -450,6 +494,15 @@ export function validateRunningRecord(record = {}) {
     );
     if (surfaceSum > 0 && Math.abs(surfaceSum - 100) > 1e-9) {
       errors.push({ field: "course", code: "SURFACE_SUM_NOT_100", message: "路面の合計を100%にしてください。", details: { surfaceSum } });
+    }
+    if (hasTreadmillOutdoorSurfaceMixFromCourse(record.course || {})) {
+      errors.push({ field: "course", code: "TREADMILL_OUTDOOR_MIX_FORBIDDEN", message: "トレッドミルと屋外路面は、同じ走行の路面割合として混ぜて入力できません。" });
+    }
+    if (record.runningFormat === "RUN_WALK") {
+      const rwSurfaceComponents = (record.runWalkRunningSections || []).flatMap((section) => Array.isArray(section?.surfaceComponents) ? section.surfaceComponents : []);
+      if (hasTreadmillOutdoorSurfaceMixFromComponents(rwSurfaceComponents)) {
+        errors.push({ field: "runWalkRunningSections", code: "TREADMILL_OUTDOOR_MIX_FORBIDDEN", message: "トレッドミルと屋外路面は、同じ走行の路面割合として混ぜて入力できません。" });
+      }
     }
     if (!["CONTINUOUS_RUN", "RUN_WALK", "UNKNOWN"].includes(record.runningFormat)) {
       errors.push({ field: "runningFormat", code: "INVALID_RUNNING_FORMAT", message: "走行形式を選び直してください。" });

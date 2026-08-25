@@ -1,4 +1,4 @@
-import { BODY_PARTS, BODY_PART_KEYS, SURFACE_FIELDS } from "../../core/model/modelConstants.js";
+import { BODY_PARTS, BODY_PART_KEYS, SURFACE_FIELDS, hasTreadmillOutdoorSurfaceMixFromCourse, hasTreadmillOutdoorSurfaceMixFromComponents } from "../../core/model/modelConstants.js";
 import { BODY_AREA_TAXONOMY } from "../../core/model/v27/bodyAreaTaxonomy.js";
 import { SAFETY_FLAG_KEYS } from "../../core/safety/supportDecision.js";
 import { RPE_PROVENANCE } from "../../core/safety/rpeProvenance.js";
@@ -41,9 +41,12 @@ function updateRpeControl(form) {
 
 function updateInputFormVisibility(form) {
   const activityType = form.querySelector('[name="activityType"]:checked')?.value || "run";
+  const runningFormat = String(form.elements.namedItem("runningFormat")?.value || "UNKNOWN").toUpperCase();
+  const runWalk = activityType === "run" && runningFormat === "RUN_WALK";
   form.querySelectorAll("[data-run-fields]").forEach((element) => setHidden(element, activityType === "rest"));
   form.querySelectorAll("[data-rest-fields]").forEach((element) => setHidden(element, activityType !== "rest"));
-
+  form.querySelectorAll("[data-run-walk-fields]").forEach((element) => setHidden(element, !runWalk));
+  form.querySelectorAll("[data-run-walk-required]").forEach((element) => { element.required = runWalk; });
 }
 
 const SURFACE_CLASS_BY_RECORD_KEY = Object.freeze({
@@ -301,6 +304,52 @@ export function readSubjectiveFeedback(formData) {
   };
 }
 
+
+const RUN_WALK_SURFACE_COMPONENTS = Object.freeze({
+  PAVED: "paved", TRACK: "track", TREADMILL: "treadmill", SOIL: "soil", TRAIL: "trail",
+  NATURAL_GRASS: "natural_grass", ARTIFICIAL_TURF: "artificial_turf", SAND: "sand",
+});
+
+function readRunWalkRunningSections(formData) {
+  return Array.from({ length: 5 }, (_, index) => {
+    const sharePercent = optionalNumberValue(formData, `runWalkSectionShare_${index}`);
+    if (!(sharePercent > 0)) return null;
+    const gradeDirection = String(formData.get(`runWalkSectionDirection_${index}`) || "FLAT").toUpperCase();
+    const gradePercent = gradeDirection === "FLAT" ? 0 : Math.abs(Number(optionalNumberValue(formData, `runWalkSectionGrade_${index}`) || 0));
+    const userCategory = String(formData.get(`runWalkSectionSurface_${index}`) || "UNKNOWN").toUpperCase();
+    const componentId = RUN_WALK_SURFACE_COMPONENTS[userCategory] || null;
+    return {
+      sectionId: `running-phase-${index + 1}`, sharePercent, gradeKnown: true, gradePercent, gradeDirection,
+      surfaceComponents: componentId ? [{ componentId, sharePercent: 100, userCategory }] : [],
+    };
+  }).filter(Boolean);
+}
+
+function recordHasMixedA9Conditions(record = {}) {
+  const sections = Array.isArray(record.course?.sections) ? record.course.sections.filter((item) => Number(item?.sharePercent) > 0) : [];
+  const surfaces = SURFACE_FIELDS.filter(({ recordKey }) => Number(record.course?.[recordKey] || 0) > 0);
+  const summaryMixedGrade = String(record.course?.gradeKnowledge || "UNKNOWN") === "KNOWN_PROFILE"
+    && (Number(record.course?.upPercent || 0) > 0 || Number(record.course?.downPercent || 0) > 0)
+    && !(Number(record.course?.upPercent || 0) >= 99.999 || Number(record.course?.downPercent || 0) >= 99.999);
+  return sections.length > 1 || surfaces.length > 1 || summaryMixedGrade;
+}
+
+function derivedRegionalSpeedMps(record = {}) {
+  const runWalk = String(record.runningFormat || "UNKNOWN").toUpperCase() === "RUN_WALK";
+  const d = Number(runWalk ? record.runWalkRunningDistanceKm : record.distanceKm);
+  const t = Number(runWalk ? record.runWalkRunningDurationMinutes : record.durationMinutes);
+  return d > 0 && t > 0 ? d * 1000 / (t * 60) : null;
+}
+
+function confirmFcrInputDomain(record = {}, confirmAction = window.confirm) {
+  const speed = derivedRegionalSpeedMps(record);
+  if (Number.isFinite(speed) && (speed < 2.25 - 1e-12 || speed > 3.33 + 1e-12)) {
+    const ok = confirmAction(`現在の12部位の比較値を計算する速度範囲は2.25〜3.33 m/sです。今回の対象速度は${speed.toFixed(2)} m/sです。\n\nこの値だけで歩行・走行を判定はしません。入力した記録は保存できますが、この範囲外では12部位の比較値は表示しません。保存しますか？`);
+    if (!ok) return false;
+  }
+  return true;
+}
+
 export function readRecordInput(formData, services) {
   const planId = String(formData.get("planId") || "");
   const plan = planId ? services.storage.plans.findById(planId) : null;
@@ -317,6 +366,9 @@ export function readRecordInput(formData, services) {
     perceivedExertion,
     rpeProvenance: perceivedExertion == null ? RPE_PROVENANCE.notReported : RPE_PROVENANCE.userReported,
     runningFormat: String(formData.get("runningFormat") || "UNKNOWN"),
+    runWalkRunningDistanceKm: optionalNumberValue(formData, "runWalkRunningDistanceKm"),
+    runWalkRunningDurationMinutes: optionalNumberValue(formData, "runWalkRunningDurationMinutes"),
+    runWalkRunningSections: readRunWalkRunningSections(formData),
     stepsProvenance: String(formData.get("stepsProvenance") || "UNKNOWN"),
     course: readCourse(formData, distanceKm),
     memo: String(formData.get("memo") || ""),
@@ -363,11 +415,24 @@ function validateUiRecord(record) {
     if (!(record.durationMinutes > 0)) messages.push("走行記録では、0より大きい実走時間を入力してください。");
     const surfaceSum = SURFACE_FIELDS.reduce((sum, { recordKey }) => sum + Number(record.course[recordKey] || 0), 0);
     if (surfaceSum > 0 && Math.abs(surfaceSum - 100) > 1e-9) messages.push(`路面割合を入力する場合は、合計を100%にしてください。現在は${surfaceSum}%です。`);
+    if (hasTreadmillOutdoorSurfaceMixFromCourse(record.course || {})) messages.push("トレッドミルと屋外路面は、同じ走行の路面割合として混ぜて入力できません。トレッドミルは単独の路面として記録してください。");
     if (Array.isArray(record.course.sections) && record.course.sections.length) {
       const sectionTotal = record.course.sections.reduce((sum, section) => sum + Number(section.sharePercent || 0), 0);
       if (Math.abs(sectionTotal - 100) > 0.01) messages.push(`区間割合の合計を100%にしてください。現在は${sectionTotal}%です。`);
     } else if (record.course.gradeKnowledge === "KNOWN_PROFILE" && Number(record.course.upPercent || 0) + Number(record.course.downPercent || 0) > 100.01) {
       messages.push("上り区間と下り区間の合計は100%以下にしてください。");
+    }
+    if (String(record.runningFormat || "UNKNOWN").toUpperCase() === "RUN_WALK") {
+      if (!(Number(record.runWalkRunningDistanceKm) > 0) || !(Number(record.runWalkRunningDistanceKm) < Number(record.distanceKm))) messages.push("RUN_WALKでは、走った距離を0より大きく、全体距離より小さい値で入力してください。");
+      if (!(Number(record.runWalkRunningDurationMinutes) > 0) || !(Number(record.runWalkRunningDurationMinutes) < Number(record.durationMinutes))) messages.push("RUN_WALKでは、走った時間を0より大きく、全体の実走時間より短い値で入力してください。");
+      if (recordHasMixedA9Conditions(record)) {
+        const runningSections = Array.isArray(record.runWalkRunningSections) ? record.runWalkRunningSections : [];
+        const total = runningSections.reduce((sum, section) => sum + Number(section.sharePercent || 0), 0);
+        if (!runningSections.length || Math.abs(total - 100) > 0.01) messages.push("mixed条件のRUN_WALKでは、走った区間の坂・路面内訳を合計100%で入力してください。");
+        if (runningSections.some((section) => !Array.isArray(section.surfaceComponents) || !section.surfaceComponents.length)) messages.push("走った区間の内訳では、各区間の路面を選んでください。");
+        const runningSurfaceComponents = runningSections.flatMap((section) => Array.isArray(section.surfaceComponents) ? section.surfaceComponents : []);
+        if (hasTreadmillOutdoorSurfaceMixFromComponents(runningSurfaceComponents)) messages.push("RUN_WALKの走った区間でも、トレッドミルと屋外路面を同じ走行内で混ぜることはできません。");
+      }
     }
   }
   return messages;
@@ -509,6 +574,10 @@ export function bindRecordInput({ services, router, context, returnState = null 
       return;
     }
     if (!confirmGradeDomain(recordInput.course, "記録")) {
+      if (submitButton) submitButton.disabled = false;
+      return;
+    }
+    if (!confirmFcrInputDomain(recordInput)) {
       if (submitButton) submitButton.disabled = false;
       return;
     }

@@ -75,7 +75,7 @@ export function renderActivationScreen({ services, context }) {
     }),
   ];
 
-  return `<section class="screen screen--activation" data-screen-architecture="runload-screen-architecture-v2.2">
+  return `<section class="screen screen--activation" data-screen-architecture="runload-screen-architecture-v2.5r1">
     ${renderPageHeading({ eyebrow: "結果の活用", title: "理解・共有・予定", description: "結果を見た後に、何を理解し、どう共有し、次回に何を残すかを選びます。" })}
     ${recordContext}
     ${publicHelpPriority}

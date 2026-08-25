@@ -21,6 +21,7 @@ import {
 } from "../ui/recordPresentation.js";
 import { bodyAreaLateralityLabel } from "../core/model/v27/bodyAreaTaxonomy.js";
 import { median, modelTotalValue } from "../ui/resultPresentation.js";
+import { NEW_MODEL_V1_MODEL_VERSION, buildNewModelV1ComparisonSignature, compareNewModelV1Signatures } from "../core/model/newModelV1/newModelV1ResultService.js";
 
 const REGION_BY_ID = new Map(REGIONS.map((region) => [region.id, region]));
 const DEFAULT_REGION_ID = "BA-DISP-019";
@@ -108,15 +109,18 @@ function buildWorkspace(services, context) {
   });
 
   const semanticRows = rows.map((item) => {
-    const semantic = item.row
+    const isNew = item.resultRecord?.model_version === NEW_MODEL_V1_MODEL_VERSION;
+    const semantic = item.row && !isNew
       ? item.resultRecord?.a7_region_semantics?.[item.row.regionId] || buildA7RegionSemanticDecomposition(item.row)
       : null;
     const ratio = semantic?.regionalConditionResponse?.ratioExact;
-    const conditionIndexExact = finite(ratio) && Number(ratio) > 0 ? 100 * Number(ratio) : null;
+    const conditionIndexExact = isNew
+      ? (finite(item.row?.value) ? Number(item.row.value) : null)
+      : (finite(ratio) && Number(ratio) > 0 ? 100 * Number(ratio) : null);
     const signature = item.row
-      ? buildA7ConditionComparisonSignature(item.resultRecord || item.resultRecord?.result || {}, item.row)
+      ? (isNew ? buildNewModelV1ComparisonSignature(item.resultRecord, item.row) : buildA7ConditionComparisonSignature(item.resultRecord || item.resultRecord?.result || {}, item.row))
       : null;
-    return Object.freeze({ ...item, semantic, conditionIndexExact, signature });
+    return Object.freeze({ ...item, semantic, conditionIndexExact, signature, isNewModelV1: isNew });
   });
   const requestedAnchor = requestedRecordId
     ? semanticRows.find((item) => item.experience.record.id === requestedRecordId && item.row) || null
@@ -129,8 +133,12 @@ function buildWorkspace(services, context) {
   const anchorSignature = anchor?.signature || null;
   const trendRows = semanticRows.map((item) => {
     const compatibility = anchorSignature && item.signature
-      ? compareA7ConditionSignatures(anchorSignature, item.signature)
-      : Object.freeze({ status: "INCOMPATIBLE", differences: Object.freeze(["A7_CONDITION_SIGNATURE_MISSING"]), directDeltaAllowed: false });
+      ? (anchor?.isNewModelV1 && item.isNewModelV1
+        ? compareNewModelV1Signatures(anchorSignature, item.signature)
+        : (!anchor?.isNewModelV1 && !item.isNewModelV1
+          ? compareA7ConditionSignatures(anchorSignature, item.signature)
+          : Object.freeze({ status: "INCOMPATIBLE", differences: Object.freeze(["MODEL_SEMANTIC_GENERATION_MISMATCH"]), directDeltaAllowed: false })))
+      : Object.freeze({ status: "INCOMPATIBLE", differences: Object.freeze(["COMPARISON_SIGNATURE_MISSING"]), directDeltaAllowed: false });
     return Object.freeze({ ...item, compatibility });
   });
 
@@ -244,10 +252,10 @@ function renderPeriodTabs(workspace) {
 function renderGuide() {
   return renderScreenGuide({
     id: "history-unified-guide",
-    summary: "保存記録、走行全体の推移、部位ごとの条件応答、本人の身体記録を役割ごとに分けて見返します。",
+    summary: "保存記録、部位別比較値の推移、本人の身体記録を役割ごとに分けて見返します。",
     sections: [
       { title: "記録一覧", body: "日付、走行・休養、距離、時間、コースから保存記録を探します。記録の良し悪しを判定する画面ではありません。" },
-      { title: "数値の推移", body: "走行全体と部位ごとの条件応答は別の意味として扱い、それぞれ同じ意味で比べられる記録だけを線で結びます。" },
+      { title: "数値の推移", body: "部位別比較値は、同じ部位・同じ数値定義・同じ保存時モデルで比べられる記録だけを線で結びます。" },
       { title: "本人の身体記録", body: "本人が入力した値を日付順に並べます。改善・悪化や危険度は判定しません。" },
     ],
   });
@@ -332,24 +340,27 @@ function chartLabelIndices(length) {
 }
 
 function renderTrendChart(items, regionName) {
-  if (!items.length) return '<p class="muted-text">同じ部位・同じ条件軸・同じ基準など、同じ意味で比べられる条件応答の記録が不足しています。</p>';
+  const isNew = Boolean(items[0]?.isNewModelV1);
+  const valueLabel = isNew ? "部位別比較値" : "条件応答";
+  if (!items.length) return `<p class="muted-text">同じ部位・同じ数値定義・同じ基準で比べられる${valueLabel}の記録が不足しています。</p>`;
   const geometry = chartGeometry(items);
   const polyline = geometry.points.map((point) => `${point.x},${point.y}`).join(" ");
   const labelIndices = chartLabelIndices(geometry.points.length);
   const valueLabels = geometry.points.map((point, index) => labelIndices.has(index) ? `<text x="${point.x}" y="${Math.max(7, point.y - 4)}" text-anchor="middle" class="regional-history-chart__value-label">${escapeHtml(formatNumber(point.conditionIndexExact, 1))}</text>` : "").join("");
-  return `<figure class="regional-history-chart" data-a7-condition-history="true"><svg viewBox="0 0 100 56" role="img" aria-label="${escapeHtml(regionName)}の比較可能な条件応答の推移"><text x="1.5" y="8" class="regional-history-chart__scale-label">${escapeHtml(formatNumber(geometry.maxValue, 0))}</text><text x="1.5" y="47" class="regional-history-chart__scale-label">${escapeHtml(formatNumber(geometry.minValue, 0))}</text><line x1="10" y1="${geometry.referenceY}" x2="96" y2="${geometry.referenceY}" class="regional-history-chart__reference"></line><text x="95" y="${Math.max(6, geometry.referenceY - 1.5)}" text-anchor="end" class="regional-history-chart__reference-label">条件応答の基準100</text>${geometry.points.length > 1 ? `<polyline points="${polyline}" class="regional-history-chart__line"></polyline>` : ""}${valueLabels}${geometry.points.map((point) => `<a href="#/result?recordId=${encodeURIComponent(point.experience.record.id)}"><circle cx="${point.x}" cy="${point.y}" r="2.8" class="regional-history-chart__point"><title>${escapeHtml(`${formatLocalDate(point.experience.record.date)} 条件応答${formatNumber(point.conditionIndexExact, 1)}、基準100との差${Number(point.conditionIndexExact) >= 100 ? "+" : ""}${formatNumber(Number(point.conditionIndexExact) - 100, 1)}`)}</title></circle></a>`).join("")}</svg><figcaption class="regional-history-chart__axis"><span>${escapeHtml(formatLocalDate(items[0].experience.record.date))}</span><strong>同じ条件応答の意味を持つ記録だけを順につないでいます</strong><span>${escapeHtml(formatLocalDate(items.at(-1).experience.record.date))}</span></figcaption></figure>`;
+  return `<figure class="regional-history-chart" data-regional-history="true"><svg viewBox="0 0 100 56" role="img" aria-label="${escapeHtml(regionName)}の比較可能な${valueLabel}の推移"><text x="1.5" y="8" class="regional-history-chart__scale-label">${escapeHtml(formatNumber(geometry.maxValue, 0))}</text><text x="1.5" y="47" class="regional-history-chart__scale-label">${escapeHtml(formatNumber(geometry.minValue, 0))}</text><line x1="10" y1="${geometry.referenceY}" x2="96" y2="${geometry.referenceY}" class="regional-history-chart__reference"></line><text x="95" y="${Math.max(6, geometry.referenceY - 1.5)}" text-anchor="end" class="regional-history-chart__reference-label">基準100</text>${geometry.points.length > 1 ? `<polyline points="${polyline}" class="regional-history-chart__line"></polyline>` : ""}${valueLabels}${geometry.points.map((point) => `<a href="#/result?recordId=${encodeURIComponent(point.experience.record.id)}"><circle cx="${point.x}" cy="${point.y}" r="2.8" class="regional-history-chart__point"><title>${escapeHtml(`${formatLocalDate(point.experience.record.date)} ${valueLabel}${formatNumber(point.conditionIndexExact, 1)}、基準100との差${Number(point.conditionIndexExact) >= 100 ? "+" : ""}${formatNumber(Number(point.conditionIndexExact) - 100, 1)}`)}</title></circle></a>`).join("")}</svg><figcaption class="regional-history-chart__axis"><span>${escapeHtml(formatLocalDate(items[0].experience.record.date))}</span><strong>同じ数値定義を持つ記録だけを順につないでいます</strong><span>${escapeHtml(formatLocalDate(items.at(-1).experience.record.date))}</span></figcaption></figure>`;
 }
 
 function routeFamilyLabel(signature = null) {
-  const route = String(signature?.routeFamilySignature || "");
-  if (route.includes("DIRECT_SPEED_SOURCE")) return "速度系列";
-  if (route.includes("DIRECT_GRADE_SOURCE")) return "勾配系列";
-  if (route.includes("DIRECT_CADENCE_SOURCE")) return "ケイデンス系列";
-  return route ? "同一条件系列" : "条件系列なし";
+  const tier = String(signature?.auditSupportTier || "");
+  if (tier === "PROVISIONAL_AUTHORIZED") return "限定的な推定を含む";
+  if (tier === "FORMAL_DIRECT_IN_DOMAIN") return "文献条件内";
+  return "同じ比較指標";
 }
 
 function renderTrendTable(items) {
-  return `<div class="regional-trend-table"><table><thead><tr><th scope="col">日付</th><th scope="col">条件応答</th><th scope="col">基準100との差</th><th scope="col">条件系列</th></tr></thead><tbody>${items.map((item) => `<tr><th scope="row"><a href="#/result?recordId=${encodeURIComponent(item.experience.record.id)}">${escapeHtml(formatLocalDate(item.experience.record.date))}</a></th><td>${formatNumber(item.conditionIndexExact, 1)}</td><td>${Number(item.conditionIndexExact) >= 100 ? "+" : ""}${formatNumber(Number(item.conditionIndexExact) - 100, 1)}</td><td>${escapeHtml(routeFamilyLabel(item.signature))}</td></tr>`).join("")}</tbody></table></div>`;
+  const isNew = Boolean(items[0]?.isNewModelV1);
+  const valueLabel = isNew ? "部位別比較値" : "条件応答";
+  return `<div class="regional-trend-table"><table><thead><tr><th scope="col">日付</th><th scope="col">${valueLabel}</th><th scope="col">基準100との差</th><th scope="col">根拠の範囲</th></tr></thead><tbody>${items.map((item) => `<tr><th scope="row"><a href="#/result?recordId=${encodeURIComponent(item.experience.record.id)}">${escapeHtml(formatLocalDate(item.experience.record.date))}</a></th><td>${formatNumber(item.conditionIndexExact, 1)}</td><td>${Number(item.conditionIndexExact) >= 100 ? "+" : ""}${formatNumber(Number(item.conditionIndexExact) - 100, 1)}</td><td>${escapeHtml(routeFamilyLabel(item.signature))}</td></tr>`).join("")}</tbody></table></div>`;
 }
 
 function renderRegionSelector(workspace) {
@@ -371,7 +382,7 @@ function renderMetricTabs(workspace) {
   };
   const options = [
     ["total", "走行全体"],
-    ["region", "部位の条件応答"],
+    ["region", "部位別比較値"],
     ["subjective", "本人の身体記録"],
   ];
   return `<nav class="view-tabs history-metric-tabs" aria-label="推移の種類">${options.map(([metric, label]) => `<a class="view-tab${workspace.metric === metric ? " is-current" : ""}" href="${escapeHtml(buildHref({ ...common, metric, regionId: workspace.regionId, areaId: workspace.selectedSubjective?.areaId, laterality: workspace.selectedSubjective?.laterality }))}"${workspace.metric === metric ? ' aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
@@ -441,15 +452,14 @@ function renderSubjectiveTrendView(workspace) {
 }
 
 function renderRegionTrendView(workspace) {
-  const directItems = workspace.trendRows
-    .filter((item) => item.compatibility.directDeltaAllowed && finite(item.conditionIndexExact))
-    .sort((left, right) => recordChronology(left.experience, right.experience));
-  const otherItems = workspace.trendRows
-    .filter((item) => item.row && !item.compatibility.directDeltaAllowed)
-    .sort((left, right) => recordChronology(right.experience, left.experience));
-  const plainMeaning = bodyRegionPlainMeaning(workspace.region.id);
+  const directItems = workspace.trendRows.filter((item) => item.compatibility.directDeltaAllowed && finite(item.conditionIndexExact)).sort((left, right) => recordChronology(left.experience, right.experience));
+  const otherItems = workspace.trendRows.filter((item) => item.row && !item.compatibility.directDeltaAllowed).sort((left, right) => recordChronology(right.experience, left.experience));
+  const isNew = Boolean(workspace.anchor?.isNewModelV1);
   const anchorConditionAvailable = Boolean(workspace.anchorSignature && finite(workspace.anchor?.conditionIndexExact));
-  return `<section class="history-trends-view"><section class="history-role-boundary" data-information-role="model" aria-labelledby="history-trend-role-title"><p>部位ごとの条件応答</p><h2 id="history-trend-role-title">同じ条件応答として比較できる記録だけで推移を見る</h2><p>同じ部位・同じ条件軸・同じ基準・同じ根拠系列を満たす記録だけをつなぎます。速度系列と勾配系列は直接つなぎません。条件応答を数値化できない記録を100で補うこともしません。</p></section>${renderRegionSelector(workspace)}${!anchorConditionAvailable && workspace.requestedRecordId ? '<section class="result-card" data-information-role="model"><div class="result-card__heading"><div><p>選択した記録</p><h2>この記録では条件応答の数値推移を作りません</h2></div></div><p>選択した記録のこの部位には、同じ意味で比較できる条件応答の数値がありません。共通走行量や旧累積値を条件応答100として代用しません。</p></section>' : ""}<section class="result-card" data-information-role="model" aria-labelledby="regional-trend-title" data-a7-condition-trend="true"><div class="result-card__heading"><div><p>同じ意味で比べられる条件応答</p><h2 id="regional-trend-title">${escapeHtml(bodyRegionFormalName(workspace.region.id, workspace.region.name))}の条件応答の推移</h2></div>${renderStatusLabel(`グラフに使用 ${directItems.length}件`, "model")}</div><p class="inline-helper"><strong>この条件応答が表すこと：</strong>${escapeHtml(plainMeaning)}</p><p class="inline-helper"><strong>共通走行量は別の情報です。</strong> 距離・歩数・接触回数などによる共通走行量は、このグラフの縦軸へ足しません。</p><p class="source-boundary">縦位置は、この期間の条件応答と各部位自身の基準100が見える範囲に合わせています。100は安全値・正常値・初心者平均ではありません。線は未記録日の状態を推定せず、増減を改善・悪化・危険度とは評価しません。</p>${renderTrendChart(directItems, bodyRegionFormalName(workspace.region.id, workspace.region.name))}${directItems.length ? renderTrendTable(directItems) : ""}</section>${otherItems.length ? `<details class="history-detail-disclosure history-excluded-disclosure"><summary><span><small>同じ条件応答では比べられない記録</small><strong>グラフに含めなかった記録</strong><em>${otherItems.length}件</em></span><span class="history-detail-disclosure__cue">内容を見る</span></summary><div class="history-excluded-records"><p class="history-excluded-records__intro">この記録は削除されていません。条件応答の数値がない、または条件軸・根拠系列・基準などの意味が一致しないため、グラフの線と差の表示から分けています。</p><div class="history-excluded-records__grid">${otherItems.map((item) => `<article class="history-excluded-record"><div><time datetime="${escapeHtml(item.experience.record.date)}">${escapeHtml(formatLocalDate(item.experience.record.date))}</time><h3>${escapeHtml(formatActivitySummary(item.experience.record))}</h3><p>${item.conditionIndexExact === null ? "条件応答の数値がないため、100を代入しません。" : "同じ意味では比べられないため、割合と差分は表示しません。"}</p></div><a class="button button--secondary" href="#/result?recordId=${encodeURIComponent(item.experience.record.id)}">この記録を見る</a></article>`).join("")}</div></div></details>` : ""}${renderPlanSummary(workspace)}</section>`;
+  const title = isNew ? "同じ部位・同じ数値定義の記録だけで推移を見る" : "同じ条件応答として比較できる記録だけで推移を見る";
+  const meaning = isNew ? "走行距離を含む部位別比較値" : bodyRegionPlainMeaning(workspace.region.id);
+  const distanceNote = isNew ? "走行距離はこの比較値に含まれています。" : "共通走行量は別の情報で、このグラフの縦軸へ足しません。";
+  return `<section class="history-trends-view"><section class="history-role-boundary" data-information-role="model" aria-labelledby="history-trend-role-title"><p>${isNew?"部位別比較値":"部位ごとの条件応答"}</p><h2 id="history-trend-role-title">${escapeHtml(title)}</h2><p>同じ部位・同じ数値定義・同じ基準・同じ保存時モデルで比べられる記録だけをつなぎます。異なる数値定義の記録は線でつなぎません。</p></section>${renderRegionSelector(workspace)}${!anchorConditionAvailable&&workspace.requestedRecordId?'<section class="result-card"><h2>この記録では数値推移を作りません</h2><p>同じ意味で比較できる部位別数値がありません。100を代入して補いません。</p></section>':""}<section class="result-card" data-information-role="model"><div class="result-card__heading"><div><p>同じ意味で比べられる記録</p><h2>${escapeHtml(bodyRegionFormalName(workspace.region.id, workspace.region.name))}の推移</h2></div>${renderStatusLabel(`グラフに使用 ${directItems.length}件`, "model")}</div><p class="inline-helper"><strong>この値が表すこと：</strong>${escapeHtml(meaning)}</p><p class="inline-helper"><strong>${escapeHtml(distanceNote)}</strong></p><p class="source-boundary">100は安全値・正常値・初心者平均ではありません。増減を改善・悪化・危険度とは評価しません。</p>${renderTrendChart(directItems, bodyRegionFormalName(workspace.region.id, workspace.region.name))}${directItems.length?renderTrendTable(directItems):""}</section>${otherItems.length?`<details class="history-detail-disclosure"><summary>同じ意味では比べられない記録 ${otherItems.length}件</summary><p>保存された記録は削除していません。数値定義または保存時の計算方法が一致しないため、グラフから分けています。</p></details>`:""}${renderPlanSummary(workspace)}</section>`;
 }
 
 function renderTrendView(workspace) {

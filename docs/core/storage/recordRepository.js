@@ -1,6 +1,7 @@
 import { normalizeRunningRecord, validateRunningRecord, validateRunningRecordInput } from "../safety/inputValidation.js";
 import { createCollectionRepository } from "./collectionRepository.js";
 import { STORAGE_KEYS } from "./storageKeys.js";
+import { stampCurrentRegionalModel } from "../model/regionalV1/regionalModelSnapshot.js";
 
 export function createRecordRepository(gateway) {
   const repository = createCollectionRepository({
@@ -28,7 +29,7 @@ export function createRecordRepository(gateway) {
     const existingResult = repository.loadAllResult();
     if (!existingResult.ok) return { ...existingResult, item: null };
     const existingRecords = existingResult.items;
-    const normalizedRecord = normalizeRunningRecord(record, {
+    const normalizedRecord = normalizeRunningRecord(stampCurrentRegionalModel(record), {
       existingIds: existingRecords.map((item) => item.id),
       nowIso: new Date().toISOString(),
       assumeExplicitRpe: true,

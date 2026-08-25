@@ -7148,8 +7148,8 @@ button.result-reading-summary__item:active { transform: translateY(1px); }
 }
 
 
-/* Screen Architecture Candidate V2.2: density, balanced grids and terminology refinement. */
-/* Annotation Balance Patch V2.2.2: concise input guidance without changing fields or calculation semantics. */
+/* Screen Architecture V2.5R1: density, balanced grids and terminology refinement. */
+/* Annotation balance retained in V2.5R1: concise input guidance without changing fields or calculation semantics. */
 .checkbox-grid--balanced-six { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .screen--record-input .screen-guide { margin-bottom: .15rem; }
 .screen--record-input .form-stage-intro,
@@ -7170,7 +7170,7 @@ button.result-reading-summary__item:active { transform: translateY(1px); }
   .checkbox-grid--balanced-six { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* Screen Architecture Candidate V2.2.4: result reading hierarchy keeps the upper area for orientation and moves ordinary follow-up after the saved result. */
+/* Screen Architecture V2.5R1 result hierarchy: result reading hierarchy keeps the upper area for orientation and moves ordinary follow-up after the saved result. */
 .result-reading-summary--compact {
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
@@ -7254,7 +7254,7 @@ button.result-reading-summary__item:active { transform: translateY(1px); }
   }
 }
 
-/* Screen Architecture Candidate V2.2.5: result value and personal-history visualization. */
+/* Screen Architecture V2.5R1 result history visualization: result value and personal-history visualization. */
 .result-card__actions {
   display: flex;
   flex-wrap: wrap;
@@ -7290,7 +7290,7 @@ button.result-reading-summary__item:active { transform: translateY(1px); }
 }
 
 
-/* Screen Architecture Candidate V2.2.6: history chart readability and explicit phone-link behavior. */
+/* Screen Architecture V2.5R1 history readability: history chart readability and explicit phone-link behavior. */
 .regional-history-chart {
   margin: 0;
   padding: clamp(.85rem, 1.8vw, 1.15rem);
@@ -7400,7 +7400,7 @@ button.result-reading-summary__item:active { transform: translateY(1px); }
   .regional-history-chart__value-label { fill: CanvasText; }
 }
 
-/* Screen Architecture Candidate V2.2.7: full-screen current-only user language audit. */
+/* Screen Architecture V2.5R1 current-language audit: full-screen current-only user language audit. */
 
 /* Maintenance V1.4.2: distinguish unavailable regional output from unchanged output. */
 .regional-focus-empty--unavailable {

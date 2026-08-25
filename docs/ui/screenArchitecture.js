@@ -1,6 +1,6 @@
 import { escapeHtml } from "./commonComponents.js";
 
-export const SCREEN_ARCHITECTURE_VERSION = "runload-screen-architecture-v2.2";
+export const SCREEN_ARCHITECTURE_VERSION = "runload-screen-architecture-v2.5r1";
 
 export const PRIMARY_DESTINATIONS = Object.freeze([
   Object.freeze({ screen: "home", label: "ホーム", description: "今日の入口", icon: "home" }),

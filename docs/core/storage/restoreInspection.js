@@ -1,5 +1,9 @@
 import { PERSONAL_PROFILE_SCHEMA_VERSION } from "../model/bodyProfileAdjustment.js";
 import { REGIONAL_V1_MODEL_VERSION } from "../model/regionalV1/regionalV1ResultService.js";
+import { NEW_MODEL_V1_MODEL_VERSION, validateNewModelV1ResultRecord } from "../model/newModelV1/newModelV1ResultService.js";
+import { REGIONAL_V1_MODEL_VERSION as V25R1_REGIONAL_V1_MODEL_VERSION } from "../model/v25r1Historical/regionalV1ResultService.js";
+import { REGIONAL_V1_MODEL_VERSION as FCR_V19_REGIONAL_V1_MODEL_VERSION } from "../model/regionalV1/fcrV19ResultService.js";
+import { REGIONAL_V1_MODEL_VERSION as LEGACY_PHASE4_REGIONAL_V1_MODEL_VERSION } from "../model/regionalV1/legacyPhase4ResultService.js";
 import { validateRegionalEngineOutput } from "../model/regionalV1/engine/validation.js";
 import { V27_MODEL_VERSION } from "../model/v27/v27Constants.js";
 import { assertV27ResultSemantics } from "../model/v27/v27Model.js";
@@ -10,6 +14,7 @@ import { validateCoursePresetInput } from "./courseRepository.js";
 import { STORAGE_KEYS, USER_DATA_STORAGE_KEYS } from "./storageKeys.js";
 
 export const RESTORE_INSPECTION_VERSION = "runload-restore-inspection-v1";
+const SUPPORTED_REGIONAL_MODEL_VERSIONS = new Set([NEW_MODEL_V1_MODEL_VERSION, REGIONAL_V1_MODEL_VERSION, V25R1_REGIONAL_V1_MODEL_VERSION, FCR_V19_REGIONAL_V1_MODEL_VERSION, LEGACY_PHASE4_REGIONAL_V1_MODEL_VERSION]);
 export const RESTORE_STATUS = Object.freeze({
   supported: "SUPPORTED",
   review: "REVIEW_REQUIRED",
@@ -131,21 +136,26 @@ function inspectRegionalResults(results, recordIds, issues) {
       issues.push(issue("BLOCKING", "REGIONAL_RESULT_ID_REQUIRED", "regionalResults", "部位別の保存済み結果の識別情報が不足しています。", itemId));
       return;
     }
-    if (item.model_version !== REGIONAL_V1_MODEL_VERSION) {
+    if (!SUPPORTED_REGIONAL_MODEL_VERSIONS.has(item.model_version)) {
       issues.push(issue("BLOCKING", "REGIONAL_VERSION_UNSUPPORTED", "regionalResults", "対応していない部位別結果形式です。", itemId));
     }
     if (!recordIds.has(String(item.record_id))) {
       issues.push(issue("BLOCKING", "REGIONAL_RECORD_REFERENCE_MISSING", "regionalResults", "部位別結果が参照する記録がバックアップ内にありません。", itemId));
     }
-    const outputValidation = validateRegionalEngineOutput(item.result || {});
-    if (!outputValidation.valid) {
-      issues.push(issue("BLOCKING", "REGIONAL_OUTPUT_INVALID", "regionalResults", "部位別結果が12部位・数値・追跡情報の現在の形式に適合しません。", itemId, {
-        issueCodes: outputValidation.issues.slice(0, 20).map((entry) => entry.code),
-      }));
-    }
-    const bodyRegions = item.body_map_payload?.regions;
-    if (!Array.isArray(bodyRegions) || bodyRegions.length !== 12) {
-      issues.push(issue("BLOCKING", "REGIONAL_BODYMAP_REGION_COUNT_INVALID", "regionalResults", "部位別表示用データが12部位そろっていません。", itemId));
+    if (item.model_version === NEW_MODEL_V1_MODEL_VERSION) {
+      const outputValidation = validateNewModelV1ResultRecord(item);
+      if (!outputValidation.valid) issues.push(issue("BLOCKING", "NEW_MODEL_REGIONAL_OUTPUT_INVALID", "regionalResults", "新しい部位別結果の数値・12部位・入力追跡情報を確認できません。", itemId, { issueCodes: outputValidation.issues.slice(0, 20) }));
+    } else {
+      const outputValidation = validateRegionalEngineOutput(item.result || {});
+      if (!outputValidation.valid) {
+        issues.push(issue("BLOCKING", "REGIONAL_OUTPUT_INVALID", "regionalResults", "部位別結果が12部位・数値・追跡情報の現在の形式に適合しません。", itemId, {
+          issueCodes: outputValidation.issues.slice(0, 20).map((entry) => entry.code),
+        }));
+      }
+      const bodyRegions = item.body_map_payload?.regions;
+      if (!Array.isArray(bodyRegions) || bodyRegions.length !== 12) {
+        issues.push(issue("BLOCKING", "REGIONAL_BODYMAP_REGION_COUNT_INVALID", "regionalResults", "部位別表示用データが12部位そろっていません。", itemId));
+      }
     }
     deepFiniteNumbers(item, "", issues, "regionalResults", itemId);
   });

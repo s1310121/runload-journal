@@ -19,6 +19,8 @@ import { buildRecentModelTotalComparison } from "../ui/resultPresentation.js";
 import { RESULT_DISPLAY_MODE_OPTIONS, normalizeJournalSettings } from "../ui/appSettings.js";
 import { renderV27TotalCard } from "../ui/v27ResultPresentation.js";
 import { renderRegionalV1Card } from "../ui/regionalV1Presentation.js";
+import { renderNewModelV1Card } from "../ui/newModelV1Presentation.js";
+import { NEW_MODEL_V1_MODEL_VERSION } from "../core/model/newModelV1/newModelV1ResultService.js";
 import { renderResultWorkspaceNavigation } from "../ui/screenArchitecture.js";
 import { buildA7ConditionPreviousComparableMap } from "../core/model/regionalV1/regionalV1ResultService.js";
 import { reportedRpeValue } from "../core/safety/rpeProvenance.js";
@@ -39,6 +41,33 @@ function stepsSourceLabel(value) {
     ESTIMATED: "推定・手入力",
     UNKNOWN: "未設定",
   }[String(value || "UNKNOWN")] || "未設定";
+}
+
+
+function regionalModelSpeedMps(record = {}) {
+  const runWalk = String(record.runningFormat || "UNKNOWN").toUpperCase() === "RUN_WALK";
+  const distanceKm = Number(runWalk ? record.runWalkRunningDistanceKm : record.distanceKm);
+  const durationMinutes = Number(runWalk ? record.runWalkRunningDurationMinutes : record.durationMinutes);
+  return distanceKm > 0 && durationMinutes > 0 ? distanceKm * 1000 / (durationMinutes * 60) : null;
+}
+
+function renderModelFamilyBoundary(record = {}, regionalV1ResultRecord = null) {
+  if (regionalV1ResultRecord?.model_version === NEW_MODEL_V1_MODEL_VERSION) {
+    const notes = [];
+    if (String(record.runningFormat || "UNKNOWN").toUpperCase() === "RUN_WALK") notes.push("RUN_WALKでは、走った区間の距離と時間だけを12部位の比較値に使います。歩いた区間は0として扱うのではなく、この走行モデルの対象外です。");
+    const speed = regionalModelSpeedMps(record);
+    if (Number.isFinite(speed) && (speed < 2.25 || speed > 3.33)) notes.push(`現在の12部位モデルの速度範囲は2.25〜3.33 m/sです。今回の対象速度は${speed.toFixed(2)} m/sのため、部位別数値は外挿しません。`);
+    return `<aside class="safety-notice model-family-boundary" aria-label="表示の読み方"><p><strong>12部位の比較値には、今回走った距離と速度条件が含まれます。</strong> 100は各部位自身の基準走行を表す比較用座標で、安全・正常・平均・推奨を意味しません。別部位どうしの数値を順位付けしません。</p>${notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</aside>`;
+  }
+  const integration = regionalV1ResultRecord?.result?.a9Integration || {};
+  const notes = [];
+  if (String(record.runningFormat || "UNKNOWN").toUpperCase() === "RUN_WALK") {
+    if (integration.status === "FULL_12_APPLIED" && integration.phaseScope === "RUNNING_ONLY") notes.push("RUN_WALKの12部位の条件応答は、今回のうち走った区間だけを対象にしています。歩いた区間と歩行・走行の切り替わりは、この数値には含めていません。");
+    else if (["RUN_WALK_DETAILS_MISSING", "RUN_WALK_PHASE_MAPPING_MISSING"].includes(integration.status)) notes.push("この記録には、保存時のRUN_WALKモデルに必要な走行区間の情報がそろっていないため、不足分を推測していません。保存済みの事実はそのまま確認できます。");
+  }
+  const speed = regionalModelSpeedMps(record);
+  if (Number.isFinite(speed) && (speed < 1.5 || speed > 5.0)) notes.push(`この保存時モデルで12部位の応答を確認した速度範囲は1.50〜5.00 m/sです。今回の対象速度は${speed.toFixed(2)} m/sです。`);
+  return `<aside class="safety-notice model-family-boundary" aria-label="保存時の表示の読み方"><p><strong>この記録は保存時の数値定義で表示します。</strong> 現在の新しい部位別比較値とは直接比較しません。</p>${notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</aside>`;
 }
 
 function renderRecordFacts(record = {}) {
@@ -253,19 +282,22 @@ export function renderResultScreen({ services, context }) {
   const totalCard = v27ResultRecord
     ? renderV27TotalCard({ resultRecord: v27ResultRecord, comparison })
     : renderLegacyResultCard(experience);
-  const previousComparisons = regionalV1ResultRecord
+  const newModelRecord = regionalV1ResultRecord?.model_version === NEW_MODEL_V1_MODEL_VERSION;
+  const previousComparisons = regionalV1ResultRecord && !newModelRecord
     ? buildA7ConditionPreviousComparableMap({ currentExperience: experience, experiences: allExperiences })
     : {};
   const regionalInitialView = settings.regionalResultInitialView === "remember"
     ? settings.regionalResultLastView
     : settings.regionalResultInitialView;
   const regionalCard = regionalV1ResultRecord
-    ? renderRegionalV1Card({
-      resultRecord: regionalV1ResultRecord,
-      previousComparisons,
-      initialView: regionalInitialView,
-      showPreviousComparison: settings.showRegionalPreviousComparison,
-    })
+    ? (newModelRecord
+      ? renderNewModelV1Card({ resultRecord: regionalV1ResultRecord, experiences: allExperiences })
+      : renderRegionalV1Card({
+        resultRecord: regionalV1ResultRecord,
+        previousComparisons,
+        initialView: regionalInitialView,
+        showPreviousComparison: settings.showRegionalPreviousComparison,
+      }))
     : v27ResultRecord
       ? renderRestRegionalCard()
       : "";
@@ -274,7 +306,7 @@ export function renderResultScreen({ services, context }) {
     record: recordCard,
     personal: personalContextCard,
     subjective: subjectiveCard,
-    modelBoundary: `<aside class="safety-notice model-family-boundary" aria-label="2つの表示の区別"><p><strong>2つの見方を分けて表示しています。</strong> 走行全体の比較用推定値と、12部位の条件応答は意味が異なります。同じ数値として比べず、部位どうしも順位付けしません。部位別表示では共通走行量も条件応答とは分けて示します。</p></aside>`,
+    modelBoundary: renderModelFamilyBoundary(record, regionalV1ResultRecord),
     total: totalCard,
     regional: regionalCard,
     compactDetails: renderCompactResultDetails({ recordCard, personalContextCard, subjectiveCard }),

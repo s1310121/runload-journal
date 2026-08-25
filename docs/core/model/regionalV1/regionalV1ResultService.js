@@ -8,13 +8,39 @@ import {
 import { FORMAL_INPUT_CATALOG } from "./engine/data.js";
 import { hashCanonical } from "./engine/sha256.js";
 import { adaptStoredRecordToRegionalV1Ui, regionalV1ProfileContext } from "./regionalV1InputAdapter.js";
+import { applyA9ConditionOverlay, A9_APP_OVERLAY_VERSION, A9_APP_AUTHORITY_VERSION } from "./a9/a9AppConditionOverlay.js";
 
-export const REGIONAL_V1_MODEL_VERSION = "runload-regional-model-v1.1-a8-1d-candidate-v1.2";
+export const REGIONAL_V1_MODEL_VERSION = "runload-regional-model-fcr-v2.6c1";
 export const REGIONAL_V1_ENGINE_BUILD = "runload-prototype-integration-v1.1-a6-candidate-trace1";
-export const REGIONAL_V1_OUTPUT_SEMANTIC_VERSION = "runload-regional-output-semantics-1.1-a8-1d-candidate-v1.2";
-export const A7_SEMANTIC_DECOMPOSITION_VERSION = "runload-a8-1d-line-quality-0.2";
+export const REGIONAL_V1_OUTPUT_SEMANTIC_VERSION = "runload-regional-output-semantics-fcr-v2.6c1";
+export const A7_SEMANTIC_DECOMPOSITION_VERSION = "runload-v2.6c1-canonical-condition-semantics-1.0";
 
 const ENDPOINT_META = Object.freeze({
+  HIP_BIDIRECTIONAL_PEAK_TORQUE_ENVELOPE_SUM_PROXY: Object.freeze({ family: "股関節トルクの相対傾向", label: "股関節の屈曲・伸展ピークトルクをまとめた相対傾向", shortLabel: "股関節トルク" }),
+  GLUTEUS_MAXIMUS_TWO_BURST_EMG_GAIN_SUM_PROXY: Object.freeze({ family: "筋活動の相対傾向", label: "大殿筋の活動に関する相対傾向", shortLabel: "大殿筋活動" }),
+  KNEE_EXTENSION_TORQUE_ANTERIOR_THIGH_PARTIAL_PROXY: Object.freeze({ family: "膝関節トルクの相対傾向", label: "膝伸展トルクに関する大腿前面の相対傾向", shortLabel: "膝伸展トルク" }),
+  HAMSTRING_GROUP_TWO_BURST_EMG_GAIN_SUM_PROXY: Object.freeze({ family: "筋活動の相対傾向", label: "ハムストリング群の活動に関する相対傾向", shortLabel: "ハムストリング活動" }),
+  CUMULATIVE_PATELLOFEMORAL_STRESS_IMPULSE_PER_KM: Object.freeze({ family: "膝蓋大腿関節stress力積の相対傾向", label: "1 kmあたりの膝蓋大腿関節stress力積に関する相対傾向", shortLabel: "膝蓋大腿stress力積" }),
+  PEAK_POSTERIOR_TIBIAL_STRESS_SPEED_TENDENCY_ALTERNATE: Object.freeze({ family: "脛骨stressの相対傾向", label: "脛骨後方のピークstressに関する相対傾向", shortLabel: "脛骨stress" }),
+  ANKLE_TOTAL_ABSOLUTE_JOINT_WORK_SPEED_PROXY_TENDENCY: Object.freeze({ family: "足関節仕事の相対傾向", label: "足関節の正負の仕事量を合計した相対傾向", shortLabel: "関節仕事" }),
+  ACHILLES_TENDON_MAXIMUM_FORCE_ALTERNATE: Object.freeze({ family: "アキレス腱ピーク力の相対傾向", label: "アキレス腱の最大力に関する相対傾向", shortLabel: "アキレス腱ピーク力" }),
+  MEDIAL_MIDFOOT_PEAK_PRESSURE_SPEED_PROXY_TENDENCY: Object.freeze({ family: "中足部ピーク足底圧の相対傾向", label: "足底中部・内側のピーク圧に関する相対傾向", shortLabel: "中足部ピーク圧" }),
+  MEDIAL_FOREFOOT_PEAK_PRESSURE_SPEED_PROXY_TENDENCY: Object.freeze({ family: "前足部ピーク足底圧の相対傾向", label: "内側前足部のピーク圧に関する相対傾向", shortLabel: "前足部ピーク圧" }),
+  PEAK_PATELLAR_TENDON_FORCE_CONDITION_RESPONSE: Object.freeze({
+    family: "腱のピーク力に関する相対傾向",
+    label: "膝前面の腱に関するピーク力の相対傾向",
+    shortLabel: "腱ピーク力傾向",
+  }),
+  RESULTANT_3D_PEAK_TIBIAL_ACCELERATION_CONDITION_RESPONSE: Object.freeze({
+    family: "衝撃応答に関する相対傾向",
+    label: "すねのピーク加速度に関する相対傾向",
+    shortLabel: "ピーク加速度傾向",
+  }),
+  PEAK_ACHILLES_TENDON_FORCE_CONDITION_RESPONSE: Object.freeze({
+    family: "腱のピーク力に関する相対傾向",
+    label: "アキレス腱のピーク力に関する相対傾向",
+    shortLabel: "腱ピーク力傾向",
+  }),
   HIP_JOINT_MECHANICAL_DEMAND_TENDENCY: Object.freeze({
     family: "関節の機械的需要傾向",
     label: "股関節まわりの機械的需要傾向",
@@ -522,6 +548,9 @@ export function buildRegionalV1ComparisonSignature(resultRecord = {}, rowOrRegio
     coverageSignature: coverage.signature,
     routeClass: routeClass(row),
     conditionSupportStatus: regionalV1ConditionSupportMeta(row).status,
+    a9HistorySignature: row.a9ConditionEvidence?.historySignature || null,
+    a9SupportTier: row.a9ConditionEvidence?.supportTier || null,
+    a9AuthorityVersion: row.a9ConditionEvidence?.authorityVersion || null,
   });
 }
 
@@ -537,6 +566,8 @@ export function compareRegionalV1Signatures(current, candidate) {
     "constructId",
     "referenceDefinitionId",
     "referenceValue",
+    "a9HistorySignature",
+    "a9AuthorityVersion",
   ];
   const comparisonFields = [
     "traceContractVersion",
@@ -617,51 +648,45 @@ export function buildA7ConditionComparisonSignature(resultRecord = {}, rowOrRegi
   if (semantic?.regionalConditionResponse?.status !== "SUPPORTED_NUMERIC") return null;
   const conditionIndexExact = a7ConditionIndexExact(semantic);
   if (conditionIndexExact === null) return null;
-  const coverage = regionalV1CoverageMeta(row);
+  const evidence = row.a9ConditionEvidence || {};
+  const canonicalFamilyId = evidence.canonicalFamilyId || evidence.referenceFamily || null;
+  const phaseScope = evidence.phaseScope || "WHOLE_RUN";
   return Object.freeze({
     semanticVersion: A7_SEMANTIC_DECOMPOSITION_VERSION,
-    authorityVersion: resultRecord.authority_version || result?.authorityVersion || null,
-    parameterSetVersion: resultRecord.parameter_set_version || result?.parameterSetVersion || null,
-    traceContractVersion: resultRecord.trace_contract_version || result?.traceContractVersion || null,
     regionId: row.regionId,
     constructId: row.constructId || null,
     referenceDefinitionId: row.referenceDefinitionId || null,
     referenceValue: row.referenceValue ?? 100,
-    routeFamilySignature: a7ConditionRouteFamilySignature(semantic),
-    sourceFamilySignature: a7ConditionSourceFamilySignature(semantic),
-    phase0NumericFamilyStatus: semantic.regionalConditionResponse.phase0NumericFamilyStatus || null,
-    coverageState: coverage.state,
-    coverageSignature: coverage.signature,
+    canonicalFamilyId,
+    phaseScope,
+    // Audit-only fields: differences here must not by themselves block direct comparison.
+    auditRouteFamilySignature: a7ConditionRouteFamilySignature(semantic),
+    auditSourceFamilySignature: a7ConditionSourceFamilySignature(semantic),
+    auditHistorySignature: evidence.historySignature || null,
+    auditSupportTier: evidence.supportTier || null,
+    auditAuthorityVersion: evidence.authorityVersion || null,
+    auditUncertaintyClasses: JSON.stringify(evidence.uncertaintyClasses || []),
   });
 }
 
 export function compareA7ConditionSignatures(current, candidate) {
   if (!current || !candidate) {
-    return Object.freeze({ status: "INCOMPATIBLE", differences: Object.freeze(["A7_CONDITION_SIGNATURE_MISSING"]), directDeltaAllowed: false });
+    return Object.freeze({ status: "INCOMPATIBLE", differences: Object.freeze(["A7_CONDITION_SIGNATURE_MISSING"]), auditDifferences: Object.freeze([]), directDeltaAllowed: false });
   }
-  const fields = [
-    "semanticVersion",
-    "authorityVersion",
-    "parameterSetVersion",
-    "traceContractVersion",
-    "regionId",
-    "constructId",
-    "referenceDefinitionId",
-    "referenceValue",
-    "routeFamilySignature",
-    "sourceFamilySignature",
-    "phase0NumericFamilyStatus",
-    "coverageState",
-    "coverageSignature",
+  const compatibilityFields = [
+    "semanticVersion", "regionId", "constructId", "referenceDefinitionId", "referenceValue", "canonicalFamilyId", "phaseScope",
   ];
-  const differences = fields.filter((field) => (
-    field === "referenceValue"
-      ? !sameNumber(current[field], candidate[field])
-      : current[field] !== candidate[field]
+  const differences = compatibilityFields.filter((field) => (
+    field === "referenceValue" ? !sameNumber(current[field], candidate[field]) : current[field] !== candidate[field]
   ));
+  const auditFields = [
+    "auditRouteFamilySignature", "auditSourceFamilySignature", "auditHistorySignature", "auditSupportTier", "auditAuthorityVersion", "auditUncertaintyClasses",
+  ];
+  const auditDifferences = auditFields.filter((field) => current[field] !== candidate[field]);
   return Object.freeze({
     status: differences.length ? "INCOMPATIBLE" : "DIRECT_COMPARABLE",
     differences: Object.freeze(differences),
+    auditDifferences: Object.freeze(auditDifferences),
     directDeltaAllowed: differences.length === 0,
   });
 }
@@ -696,7 +721,7 @@ export function buildA7ConditionHistoryComparison({ currentExperience, experienc
         date: experience.record.date || "",
         conditionIndexExact,
         displayConditionIndex: conditionIndexExact === null ? null : Math.round(conditionIndexExact),
-        routeFamilySignature: candidateSignature?.routeFamilySignature || null,
+        routeFamilySignature: candidateSignature?.auditRouteFamilySignature || null,
         signature: candidateSignature,
         compatibility,
         directDeltaPoints,
@@ -753,7 +778,7 @@ export function buildA7ConditionPreviousComparable({ currentExperience, experien
         createdAt: experience.record.createdAt || "",
         conditionIndexExact,
         displayConditionIndex: conditionIndexExact === null ? null : Math.round(conditionIndexExact),
-        routeFamilySignature: signature?.routeFamilySignature || null,
+        routeFamilySignature: signature?.auditRouteFamilySignature || null,
         signature,
         compatibility,
       });
@@ -959,7 +984,7 @@ function buildOutputSemanticMetadata(resultRecord) {
   });
 }
 
-export function createRegionalV1ResultRecord({ record, feedback = {}, sessionSequence = 1 }) {
+export function createRegionalV1ResultRecord({ record, feedback = {}, sessionSequence = 1, allRecords = [] }) {
   const uiInput = adaptStoredRecordToRegionalV1Ui(record, feedback);
   const adapted = adaptPrototypeRecord(uiInput, {
     sessionId: record.id,
@@ -975,7 +1000,10 @@ export function createRegionalV1ResultRecord({ record, feedback = {}, sessionSeq
   if (!engineInput.ok) return { ...engineInput, code: engineInput.error?.code || "REGIONAL_V1_ENGINE_INPUT_FAILED" };
   const calculation = calculateRegionalLoad(engineInput.value);
   if (!calculation.ok) return { ...calculation, code: calculation.error?.code || "REGIONAL_V1_CALCULATION_FAILED" };
-  const bodyMap = buildBodyMapPayload(calculation.value, "ja-JP");
+  const a9Overlay = applyA9ConditionOverlay(calculation.value, record, { allRecords });
+  if (!a9Overlay.ok) return { ...a9Overlay, code: a9Overlay.error?.code || "REGIONAL_V1_A9_OVERLAY_FAILED" };
+  const integratedCalculation = a9Overlay.value;
+  const bodyMap = buildBodyMapPayload(integratedCalculation, "ja-JP");
   const revision = sourceRevision(record);
   const baseRecord = {
     id: `regional-v1-result-${sanitize(record.id)}-${sanitize(revision)}`,
@@ -983,16 +1011,21 @@ export function createRegionalV1ResultRecord({ record, feedback = {}, sessionSeq
     source_record_revision: revision,
     generated_at: new Date().toISOString(),
     model_version: REGIONAL_V1_MODEL_VERSION,
-    authority_version: calculation.value.authorityVersion,
-    parameter_set_version: calculation.value.parameterSetVersion,
+    authority_version: integratedCalculation.authorityVersion,
+    parameter_set_version: integratedCalculation.parameterSetVersion,
     adapter_version: augmentedFormalBundle.adapterVersion,
-    engine_build_version: calculation.value.engineBuildVersion,
-    trace_contract_version: calculation.value.traceContractVersion || null,
+    engine_build_version: integratedCalculation.engineBuildVersion,
+    trace_contract_version: integratedCalculation.traceContractVersion || null,
+    a9_overlay_version: A9_APP_OVERLAY_VERSION,
+    a9_authority_version: A9_APP_AUTHORITY_VERSION,
+    legacy_base_authority_version: integratedCalculation.legacyBaseAuthorityVersion || null,
+    legacy_base_parameter_set_version: integratedCalculation.legacyBaseParameterSetVersion || null,
+    a9_applied_region_ids: clone(a9Overlay.audit?.appliedRegionIds || []),
     state: record.activityType === "rest" ? "REST" : "RUN",
     input_snapshot: clone(uiInput),
     formal_input_snapshot: clone(augmentedFormalBundle),
     engine_input_snapshot: clone(engineInput.value),
-    result: clone(calculation.value),
+    result: clone(integratedCalculation),
     body_map_payload: clone(bodyMap),
   };
   const resultRecord = Object.freeze({

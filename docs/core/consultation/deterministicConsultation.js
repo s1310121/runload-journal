@@ -312,7 +312,7 @@ function comparisonLines(regional) {
     ];
   }
   if (comparison.status === "NO_COMPARABLE_CONDITION_RECORD") {
-    return ["過去記録はありますが、同じ部位・同じ条件軸・同じ基準など、同じ条件応答として比べられる記録がないため差を表示しません。"];
+    return ["過去記録はありますが、同じ部位・同じ比較指標・同じ基準で比べられる記録がないため差を表示しません。"];
   }
   if (comparison.status === "NO_PREVIOUS_CONDITION_RECORD") return ["前の条件応答記録がないため、自分の過去記録との比較はまだ表示しません。"];
   return ["今回の条件応答を数値化できないため、自分の過去記録との比較は表示しません。"];

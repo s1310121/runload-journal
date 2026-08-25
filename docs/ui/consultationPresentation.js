@@ -231,30 +231,37 @@ function exposureValueMarkup(exposure = {}) {
 function modelSection(presentation) {
   const model = presentation.report.modelReference;
   if (model.state === "REST") {
-    return reportSection({ id: "report-model-title", kicker: "03 / 数値結果", title: "走行推定値なし", body: "<p>休養記録には、走行全体の比較用推定値、部位の条件応答、共通走行量を作成しません。</p>" });
+    return reportSection({ id: "report-model-title", kicker: "03 / 数値結果", title: "走行の比較値なし", body: "<p>休養記録には走行の部位別比較値を作成しません。</p>" });
   }
   if (model.state !== "RUN") {
-    return reportSection({ id: "report-model-title", kicker: "03 / 数値結果", title: "比較値なし", body: "<p>この保存記録では、走行全体と部位の比較値を表示できません。</p>" });
+    return reportSection({ id: "report-model-title", kicker: "03 / 数値結果", title: "比較値なし", body: "<p>この保存記録では部位別比較値を表示できません。</p>" });
+  }
+  const regional = model.regional;
+  const regionName = bodyRegionFormalName(regional.regionId, regional.regionLabel);
+  if (model.newModelV1) {
+    return reportSection({
+      id: "report-model-title",
+      kicker: "03 / 数値結果",
+      title: "今回の部位別比較値",
+      body: `<div class="report-model-total" data-new-model-v1-report="true"><span>${escapeHtml(regionName)}の比較値</span>${conditionValueMarkup(regional)}<em>${escapeHtml(regional.reference)}</em><p>走行距離はこの比較値に含まれます。別部位とのランキングには使いません。</p></div>
+        ${rowsMarkup([
+          ["この部位の表示が表すこと", regional.endpoint?.label || "部位別比較値"],
+          ["比較表示", model.modelVersion ? "同じ数値定義の記録と比較できます" : "利用できません"],
+        ], "report-fact-list report-fact-list--model")}
+        <p class="report-print-note">100は安全値・正常値・初心者平均・推奨値ではありません。数値は実測した力や傷害確率を表しません。</p>`,
+    });
   }
   const total = model.total;
-  const regional = model.regional;
   const totalRange = total?.showRange && Array.isArray(total.range)
     ? `<small>範囲 ${escapeHtml(formatNumber(total.range[0], 1))}–${escapeHtml(formatNumber(total.range[1], 1))}</small>`
     : "";
-  const regionName = bodyRegionFormalName(regional.regionId, regional.regionLabel);
   return reportSection({
     id: "report-model-title",
     kicker: "03 / 数値結果",
-    title: "走行全体・部位の条件応答・共通走行量を分けて表示",
+    title: "保存時の数値定義で表示",
     body: `<div class="report-model-total"><span>走行全体の比較用推定値</span><strong>${hasFiniteValue(total?.central) ? escapeHtml(formatNumber(total.central, 1)) : "数値なし"}</strong><em>${hasFiniteValue(total?.central) ? "推定ポイント" : ""}</em>${totalRange}<p>確認できた勾配区間 ${escapeHtml(percentage(total?.gradeCoverage))}・確認できた路面区間 ${escapeHtml(percentage(total?.surfaceCoverage))}</p></div>
       <div class="report-model-total" data-a7-report-condition-response="true"><span>${escapeHtml(regionName)}の条件応答</span>${conditionValueMarkup(regional)}<em>${escapeHtml(regional.reference)}</em><p>基準100は安全値・正常値・初心者平均ではなく、部位間の共通尺度でもありません。</p></div>
-      <div class="report-model-total" data-a7-report-common-exposure="true"><span>共通走行量</span>${exposureValueMarkup(regional.exposure)}<em>${escapeHtml(regional.exposure?.label || "走行量")}</em><p>条件応答とは別の走行量側の情報です。条件応答の数値がないときも100で補いません。</p></div>
-      ${rowsMarkup([
-        ["この部位の表示が表すこと", bodyRegionPlainMeaning(regional.regionId)],
-        ["条件応答のendpoint", regional.endpoint?.label || "部位固有の相対傾向"],
-        ["比較表示", model.modelVersion ? "利用できます" : "利用できません"],
-      ], "report-fact-list report-fact-list--model")}
-      <p class="report-print-note">部位の条件応答は身体全体の100%配分ではなく、各部位の実際の力を測定したものでもありません。</p>`,
+      <div class="report-model-total" data-a7-report-common-exposure="true"><span>共通走行量</span>${exposureValueMarkup(regional.exposure)}<em>${escapeHtml(regional.exposure?.label || "走行量")}</em><p>条件応答とは別の走行量側の情報です。</p></div>`,
   });
 }
 
@@ -277,11 +284,12 @@ function detailedHistorySection(presentation) {
   if (!rows.length) return `<section class="report-period-section report-period-section--printable"><div class="report-section__heading"><p>05 / 最近の保存記録</p><h2>比較対象の記録なし</h2></div><p>同じ意味で比べられる過去記録はまだありません。</p></section>`;
   const regionName = bodyRegionFormalName(presentation.report.modelReference.regional.regionId, presentation.report.modelReference.regional.regionLabel);
   const counts = presentation.report.comparisonCounts;
+  const regionalLabel = presentation.report.modelReference.newModelV1 ? "部位別比較値" : "部位の条件応答";
   return `<section class="report-period-section report-period-section--printable" aria-labelledby="report-period-title"><div class="report-section__heading"><p>05 / 最近の保存記録</p><h2 id="report-period-title">同じ定義で比べられるかを確認</h2></div>
-    <p><strong>${escapeHtml(regionName)}／部位の条件応答</strong><br>${escapeHtml(presentation.report.modelReference.regional.reference)}</p>
+    <p><strong>${escapeHtml(regionName)}／${escapeHtml(regionalLabel)}</strong><br>${escapeHtml(presentation.report.modelReference.regional.reference)}</p>
     <div class="report-period-summary"><div><strong>${escapeHtml(String(counts.direct))}件</strong><span>直接比較可</span></div><div><strong>${escapeHtml(String(counts.excluded))}件</strong><span>直接比較しない</span></div><div><strong>${escapeHtml(String(counts.nonnumeric))}件</strong><span>数値なし</span></div></div>
-    <table class="report-period-table"><thead><tr><th>日付</th><th>状態</th><th>走行全体</th><th>${escapeHtml(regionName)}の条件応答</th><th>RPE</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${escapeHtml(row.date.slice(5).replace("-", "/"))}</td><td>${escapeHtml(printableStatus(row))}</td><td>${row.total == null ? "—" : escapeHtml(formatNumber(row.total, 1))}</td><td>${row.regionalDirectComparable && hasFiniteValue(row.regionalValue) ? escapeHtml(formatNumber(row.regionalValue, 1)) : "直接比較しない"}</td><td>${row.rpe == null ? "—" : escapeHtml(formatNumber(row.rpe, 0))}</td></tr>`).join("")}</tbody></table>
-    <p class="report-print-note">速度系列と勾配系列など、条件軸・根拠系列・Reference・coverageが異なる記録を線や数値差でつなぎません。空欄・休養・数値なしを0や100として扱いません。</p>
+    <table class="report-period-table"><thead><tr><th>日付</th><th>状態</th><th>走行全体</th><th>${escapeHtml(regionName)}の${escapeHtml(regionalLabel)}</th><th>RPE</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${escapeHtml(row.date.slice(5).replace("-", "/"))}</td><td>${escapeHtml(printableStatus(row))}</td><td>${row.total == null ? "—" : escapeHtml(formatNumber(row.total, 1))}</td><td>${row.regionalDirectComparable && hasFiniteValue(row.regionalValue) ? escapeHtml(formatNumber(row.regionalValue, 1)) : "直接比較しない"}</td><td>${row.rpe == null ? "—" : escapeHtml(formatNumber(row.rpe, 0))}</td></tr>`).join("")}</tbody></table>
+    <p class="report-print-note">比較指標・基準・対象範囲が異なる記録を線や数値差でつなぎません。速度や勾配が異なっても、同じ比較指標と基準を保つ場合は比較できます。空欄・休養・数値なしを0や100として扱いません。</p>
   </section>`;
 }
 
@@ -293,7 +301,7 @@ export function renderReportSheet({ presentation, format = "standard" }) {
     ${modelSection(presentation)}
     ${notesSection(presentation)}
     ${format === "detailed" ? detailedHistorySection(presentation) : ""}
-    <footer class="report-sheet__boundary"><strong>この資料の範囲</strong><p>本人入力、走行全体、部位の条件応答、共通走行量は別の情報です。数値表示は走行記録を比べるための参考で、筋肉・腱・関節に加わった実際の力、診断、障害予測、原因、走行可否、安全保証を示しません。共有する範囲と相手は本人が選びます。</p></footer>
+    <footer class="report-sheet__boundary"><strong>この資料の範囲</strong><p>${presentation.report.modelReference.newModelV1 ? "本人が入力した身体記録は部位別比較値とは別に扱い、走行距離は部位別比較値に含まれます。" : "本人入力、走行全体、部位の条件応答、共通走行量は別の情報です。"} 数値表示は走行記録を比べるための参考で、筋肉・腱・関節に加わった実際の力、診断、障害予測、原因、走行可否、安全保証を示しません。共有する範囲と相手は本人が選びます。</p></footer>
   </article>`;
 }
 

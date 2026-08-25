@@ -7,6 +7,11 @@ import {
   regionalV1EndpointMeta,
   regionalV1ExposureMeta,
 } from "../model/regionalV1/regionalV1ResultService.js";
+import {
+  NEW_MODEL_V1_MODEL_VERSION,
+  buildNewModelV1ComparisonSignature,
+  compareNewModelV1Signatures,
+} from "../model/newModelV1/newModelV1ResultService.js";
 import { bodyAreaLateralityLabel } from "../model/v27/bodyAreaTaxonomy.js";
 import { summarizePersonalContext } from "../personal/personalContext.js";
 import { reportedRpeValue } from "../safety/rpeProvenance.js";
@@ -33,6 +38,10 @@ function hasFiniteValue(value) {
 
 function finiteOrNull(value) {
   return hasFiniteValue(value) ? Number(value) : null;
+}
+
+function isNewModelV1Experience(experience = {}) {
+  return experience?.regionalV1ResultRecord?.model_version === NEW_MODEL_V1_MODEL_VERSION;
 }
 
 function normalizeRegionId(value = "") {
@@ -132,11 +141,46 @@ function regionalReference(experience, regionId) {
     exposure: exposureReference(null, null),
     phase0NumericFamilyStatus: null,
     routeFamilySignature: null,
+    newModelV1: false,
   };
   if (experience?.record?.activityType === "rest") {
-    return Object.freeze({ ...base, state: "REST" });
+    return Object.freeze({ ...base, state: "REST", newModelV1: isNewModelV1Experience(experience) });
   }
   const row = resultRow(experience, regionId);
+  if (isNewModelV1Experience(experience)) {
+    if (!row || !hasFiniteValue(row.value)) {
+      return Object.freeze({
+        ...base,
+        state: experience?.regionalV1ResultRecord?.result?.state || "UNAVAILABLE",
+        reference: "この部位の1 km基準走行=100",
+        newModelV1: true,
+      });
+    }
+    const signature = buildNewModelV1ComparisonSignature(experience.regionalV1ResultRecord, row);
+    const value = Number(row.value);
+    return Object.freeze({
+      ...base,
+      state: "SUPPORTED_NUMERIC",
+      value,
+      delta: value - 100,
+      reference: "この部位の1 km基準走行=100（安全値・正常値ではありません）",
+      referenceDefinitionId: row.referenceId || null,
+      endpoint: Object.freeze({ label: String(row.construct || "部位別比較値") }),
+      exposure: Object.freeze({
+        status: "INCLUDED_IN_REGIONAL_VALUE",
+        basis: "distance_included",
+        label: "走行距離は部位別比較値に含まれます",
+        shortLabel: "走行距離を含む",
+        unit: "",
+        qEquivalent: null,
+        qReference: null,
+        ratioExact: null,
+        fallbackStatus: "NONE",
+      }),
+      routeFamilySignature: signature,
+      newModelV1: true,
+    });
+  }
   if (!row) return Object.freeze(base);
   const semantic = semanticFor(experience, row);
   const condition = semantic?.regionalConditionResponse || {};
@@ -176,7 +220,8 @@ function totalReference(experience) {
 
 function modelReference(experience, regionId) {
   const isRest = experience?.record?.activityType === "rest";
-  const total = totalReference(experience);
+  const isNew = isNewModelV1Experience(experience);
+  const total = isNew ? null : totalReference(experience);
   const regional = regionalReference(experience, regionId);
   const rpeWasReported = reportedRpeValue(experience?.record || {}) != null;
   const internal = experience?.v27ResultRecord?.result?.internal;
@@ -186,7 +231,8 @@ function modelReference(experience, regionId) {
       || experience?.v27ResultRecord?.model_version
       || "",
     ),
-    state: isRest ? "REST" : total || regional.state !== "UNAVAILABLE" ? "RUN" : "NO_NUMERIC_RESULT",
+    newModelV1: isNew,
+    state: isRest ? "REST" : total || regional.state === "SUPPORTED_NUMERIC" ? "RUN" : "NO_NUMERIC_RESULT",
     total,
     regional,
     internalResponse: isRest ? null : Object.freeze({
@@ -204,12 +250,12 @@ function recordChronology(left, right) {
 }
 
 function recentFacts(allExperiences, target, regionId) {
+  const targetIsNew = isNewModelV1Experience(target);
   const currentRow = resultRow(target, regionId);
   const currentSignature = currentRow
-    ? buildA7ConditionComparisonSignature(
-      target?.regionalV1ResultRecord || target?.regionalV1Result || {},
-      currentRow,
-    )
+    ? (targetIsNew
+      ? buildNewModelV1ComparisonSignature(target.regionalV1ResultRecord, currentRow)
+      : buildA7ConditionComparisonSignature(target?.regionalV1ResultRecord || target?.regionalV1Result || {}, currentRow))
     : null;
   return [...allExperiences]
     .filter((item) => item?.record?.id && item.record.id !== target?.record?.id)
@@ -217,21 +263,29 @@ function recentFacts(allExperiences, target, regionId) {
     .sort((left, right) => recordChronology(right, left))
     .slice(0, 14)
     .map((item) => {
+      const itemIsNew = isNewModelV1Experience(item);
       const row = resultRow(item, regionId);
       const signature = row
-        ? buildA7ConditionComparisonSignature(
-          item?.regionalV1ResultRecord || item?.regionalV1Result || {},
-          row,
-        )
+        ? (itemIsNew
+          ? buildNewModelV1ComparisonSignature(item.regionalV1ResultRecord, row)
+          : buildA7ConditionComparisonSignature(item?.regionalV1ResultRecord || item?.regionalV1Result || {}, row))
         : null;
-      const compatibility = compareA7ConditionSignatures(currentSignature, signature);
+      let compatibility;
+      if (targetIsNew && itemIsNew) {
+        const compared = compareNewModelV1Signatures(currentSignature, signature);
+        compatibility = { directDeltaAllowed: compared.directDeltaAllowed, differences: compared.directDeltaAllowed ? [] : [compared.reason] };
+      } else if (!targetIsNew && !itemIsNew) {
+        compatibility = compareA7ConditionSignatures(currentSignature, signature);
+      } else {
+        compatibility = { directDeltaAllowed: false, differences: ["MODEL_SEMANTIC_GENERATION_MISMATCH"] };
+      }
       const regional = regionalReference(item, regionId);
       return Object.freeze({
         recordId: item.record.id,
         date: item.record.date,
         activity: activitySummary(item.record),
         activityType: item.record.activityType === "rest" ? "rest" : "run",
-        total: totalReference(item)?.central ?? null,
+        total: targetIsNew ? null : totalReference(item)?.central ?? null,
         regionalState: regional.state,
         regionalValue: compatibility.directDeltaAllowed ? regional.value : null,
         regionalDirectComparable: compatibility.directDeltaAllowed,
@@ -308,10 +362,10 @@ function exposureText(exposure = {}) {
 function regionalText(regional) {
   if (!regional || !hasFiniteValue(regional.value)) {
     const label = regional?.regionLabel || "選択した部位";
-    return `部位の条件応答：${label}／数値なし（根拠不足のため100で補完しません）`;
+    return `${regional?.newModelV1 ? "部位別比較値" : "部位の条件応答"}：${label}／数値なし`;
   }
   const rounded = Math.round(Number(regional.value) * 10) / 10;
-  return `部位の条件応答：${regional.regionLabel} ${rounded}／${regional.reference}`;
+  return `${regional.newModelV1 ? "部位別比較値" : "部位の条件応答"}：${regional.regionLabel} ${rounded}／${regional.reference}`;
 }
 
 function bodyObservationLines(report) {
@@ -349,7 +403,9 @@ export function createShortConsultationMemo(report) {
     lines.push(regionalText(report.modelReference.regional));
     lines.push(exposureText(report.modelReference.regional?.exposure));
   }
-  lines.push("本人入力、走行全体、部位の条件応答、共通走行量は別の情報です。");
+  lines.push(report.modelReference.newModelV1
+    ? "本人入力は部位別比較値とは別に記録され、走行距離は部位別比較値に含まれます。"
+    : "本人入力、走行全体、部位の条件応答、共通走行量は別の情報です。");
   return lines.join("\n");
 }
 
@@ -376,7 +432,9 @@ export function createStandardConsultationText(report) {
       : "走行全体の比較用推定値：数値なし");
     lines.push(regionalText(report.modelReference.regional));
     lines.push(exposureText(report.modelReference.regional?.exposure));
-    lines.push("部位条件応答の基準100は、安全値・正常値・初心者平均・部位間比較の共通尺度ではありません。");
+    lines.push(report.modelReference.newModelV1
+      ? "部位別比較値の基準100は、その部位の1 km基準走行に対応する比較用座標で、安全値・正常値・初心者平均・部位間比較の共通尺度ではありません。"
+      : "部位条件応答の基準100は、安全値・正常値・初心者平均・部位間比較の共通尺度ではありません。");
     if (report.rawFacts.rpe != null) {
       lines.push(`走り全体のきつさ（RPE）：${report.rawFacts.rpe}/10（数値表示とは分けて記載）`);
     }
@@ -396,10 +454,10 @@ export function createDetailedConsultationText(report) {
   const recent = report.recent.map((item) => {
     const total = item.total == null ? "走行全体 数値なし" : `走行全体 ${Math.round(item.total * 10) / 10}`;
     const regional = item.regionalDirectComparable && hasFiniteValue(item.regionalValue)
-      ? `${regionLabel}の条件応答 ${Math.round(item.regionalValue * 10) / 10}`
-      : `${regionLabel}の条件応答 直接比較しない`;
+      ? `${regionLabel}の${report.modelReference.newModelV1 ? "部位別比較値" : "条件応答"} ${Math.round(item.regionalValue * 10) / 10}`
+      : `${regionLabel}の${report.modelReference.newModelV1 ? "部位別比較値" : "条件応答"} 直接比較しない`;
     const rpe = item.rpe == null ? "" : `／RPE ${item.rpe}`;
     return `- ${item.date}：${item.activity}／${total}／${regional}${rpe}`;
   });
-  return `${standard}\n\n最近の保存記録：\n${recent.join("\n")}\n\n条件応答の数値差は、同じ部位・同じ条件系列・同じReferenceなどの署名が一致する記録だけで扱います。速度系列と勾配系列を直接つなぎません。`;
+  return `${standard}\n\n最近の保存記録：\n${recent.join("\n")}\n\n${report.modelReference.newModelV1 ? "部位別比較値" : "条件応答"}の数値差は、同じ部位・同じ比較指標・同じ基準・同じ保存時の数値定義を持つ記録だけで扱います。`;
 }

@@ -28,6 +28,8 @@ import {
   columnHrefForCondition,
 } from "../ui/hierarchicalExplanation.js";
 import { renderResultWorkspaceNavigation } from "../ui/screenArchitecture.js";
+import { renderNewModelV1Detail } from "../ui/newModelV1Presentation.js";
+import { NEW_MODEL_V1_MODEL_VERSION } from "../core/model/newModelV1/newModelV1ResultService.js";
 import {
   bodyRegionDisplayName,
   bodyRegionFormalName,
@@ -308,6 +310,17 @@ function conditionIndexV1(semantic) {
   return finiteV1(ratio) && Number(ratio) > 0 ? 100 * Number(ratio) : null;
 }
 
+function a9TierDetailV1(row) {
+  const tier = row?.a9ConditionEvidence?.supportTier;
+  if (tier === "PROVISIONAL_AUTHORIZED") {
+    return { label: "限定的な推定", notice: "この値は公開された研究値を基準に、あらかじめ範囲を限定して延長した推定です。研究で直接測られた条件そのものではありません。" };
+  }
+  if (tier === "FORMAL_DIRECT_IN_DOMAIN") {
+    return { label: "文献条件内", notice: "この値は公開された研究の測定条件内の値またはその区間内の補間に基づきます。" };
+  }
+  return null;
+}
+
 function stateLabelV1(row, semantic) {
   if (semantic?.regionalConditionResponse?.status === "SUPPORTED_NUMERIC") return "条件応答を表示";
   if (semantic?.regionalConditionResponse?.status === "UNSUPPORTED_NO_NUMERIC_MAGNITUDE") return "条件応答の数値なし";
@@ -355,7 +368,7 @@ function renderHistoryComparisonV1(comparison) {
     const delta = finiteV1(item.directDeltaPoints)
       ? `今回との差 ${Number(item.directDeltaPoints) > 0 ? "+" : ""}${Math.round(Number(item.directDeltaPoints))}ポイント`
       : "条件軸または基準が異なるため、数値差は表示しません";
-    return `<article class="regional-history-comparison-row" data-comparison-status="${escapeHtml(status)}"><div><time datetime="${escapeHtml(item.date)}">${escapeHtml(formatLocalDate(item.date))}</time><strong>${item.displayConditionIndex == null ? "条件応答の数値なし" : escapeHtml(String(item.displayConditionIndex))}</strong><small>${item.routeFamilySignature ? "条件応答の記録" : "比較対象外"}</small></div><div>${renderStatusLabel(comparisonLabelV1(status), status === "DIRECT_COMPARABLE" ? "model" : "neutral")}<p>${escapeHtml(delta)}</p><small>${status === "DIRECT_COMPARABLE" ? "同じ部位・同じ条件軸・同じ基準で比べられる記録です。良し悪しや改善・悪化は判定しません。" : "速度系列と勾配系列など、条件応答の意味が異なる記録どうしは直接比較しません。"}</small></div><a class="button button--text" href="#/result?recordId=${encodeURIComponent(item.recordId)}">記録を開く</a></article>`;
+    return `<article class="regional-history-comparison-row" data-comparison-status="${escapeHtml(status)}"><div><time datetime="${escapeHtml(item.date)}">${escapeHtml(formatLocalDate(item.date))}</time><strong>${item.displayConditionIndex == null ? "条件応答の数値なし" : escapeHtml(String(item.displayConditionIndex))}</strong><small>${item.routeFamilySignature ? "条件応答の記録" : "比較対象外"}</small></div><div>${renderStatusLabel(comparisonLabelV1(status), status === "DIRECT_COMPARABLE" ? "model" : "neutral")}<p>${escapeHtml(delta)}</p><small>${status === "DIRECT_COMPARABLE" ? "同じ部位・同じ比較指標・同じ基準で比べられる記録です。良し悪しや改善・悪化は判定しません。" : "比較指標・基準・対象範囲が異なる記録どうしは直接比較しません。"}</small></div><a class="button button--text" href="#/result?recordId=${encodeURIComponent(item.recordId)}">記録を開く</a></article>`;
   }).join("")}</div><p class="source-boundary">比較できる場合も、条件応答の差は本人の記録間の相対差です。身体状態の改善・悪化、傷害の可能性、安全性を意味しません。</p>`;
 }
 
@@ -381,6 +394,15 @@ function renderRegionalV1Detail({ experience, regionId, experiences }) {
   const conditionDeltaText = conditionDelta === null ? "—" : conditionDelta === 0 ? "±0ポイント" : `${conditionDelta > 0 ? "+" : ""}${conditionDelta}ポイント`;
   const observations = subjectiveV1(experience.feedback || {}, regionId);
   const conditionExplanation = buildRegionalConditionExplanation(row);
+  const a9Tier = a9TierDetailV1(row);
+  const a9TierNotice = a9Tier
+    ? `<p class="inline-helper" data-a9-evidence-tier-detail="${row.a9ConditionEvidence.supportTier === "PROVISIONAL_AUTHORIZED" ? "provisional" : "direct"}"><strong>${escapeHtml(a9Tier.label)}：</strong>${escapeHtml(a9Tier.notice)}</p>`
+    : "";
+  const surfaceItems = Array.isArray(row?.a9ConditionEvidence?.surfaceDisposition) ? row.a9ConditionEvidence.surfaceDisposition : [];
+  const surfaceUnquantified = surfaceItems.some((item) => item && item.numericSurfaceMainEffectApplied !== true && !["BASE_REFERENCE", "ENVIRONMENT_BASE_RESPONSE"].includes(String(item.surfaceDisposition || "")));
+  const surfaceNotice = surfaceUnquantified
+    ? '<p class="inline-helper" data-surface-effect-disclosure="unquantified"><strong>路面の数値効果を未定量として扱う部分があります。</strong> 路面情報は記録・根拠の範囲・不確かさに残していますが、この部位の独立した路面効果が数値で確立していない部分は数値へ足していません。効果がないという意味ではありません。</p>'
+    : "";
   const historyComparison = buildA7ConditionHistoryComparison({
     currentExperience: experience,
     experiences,
@@ -397,10 +419,10 @@ function renderRegionalV1Detail({ experience, regionId, experiences }) {
       description: `${formatLocalDate(experience.record.date)}の、走行条件によるこの部位の応答と共通走行量を分けて確認します。`,
     })}
     ${renderResultWorkspaceNavigation({ recordId: experience.record.id, date: experience.record.date, regionId, active: "region" })}
-    <section class="result-card" data-information-role="model" data-a7-condition-primary="true"><div class="result-card__heading"><div><p>走行条件による部位別応答</p><h2>この部位の条件応答</h2></div>${renderStatusLabel(stateLabelV1(row, semantic), conditionDisplay === null ? "neutral" : "model")}</div>${primaryValue}<p class="inline-helper"><strong>この表示が表すこと：</strong>${escapeHtml(bodyRegionPlainMeaning(regionId))}について、今回の走行条件に対応する相対的な応答です。</p><p class="inline-helper"><strong>基準100は安全値・正常値・初心者平均ではありません。</strong> また、条件応答を数値化できないときに100を代入しません。</p><p class="source-boundary">この値は先行研究を参考にした相対表示で、個人の身体を測った値ではありません。部位ごとに意味が異なるため、数値の大きさで部位間を順位づけできません。</p></section>
+    <section class="result-card" data-information-role="model" data-a7-condition-primary="true"><div class="result-card__heading"><div><p>走行条件による部位別応答</p><h2>この部位の条件応答</h2></div>${renderStatusLabel(stateLabelV1(row, semantic), conditionDisplay === null ? "neutral" : "model")}</div>${primaryValue}<p class="inline-helper"><strong>この表示が表すこと：</strong>${escapeHtml(bodyRegionPlainMeaning(regionId))}について、今回の走行条件に対応する相対的な応答です。</p>${a9TierNotice}${surfaceNotice}<p class="inline-helper"><strong>基準100は安全値・正常値・初心者平均ではありません。</strong> また、条件応答を数値化できないときに100を代入しません。</p><p class="source-boundary">この値は先行研究を参考にした相対表示で、個人の身体を測った値ではありません。部位ごとに意味が異なるため、数値の大きさで部位間を順位づけできません。</p></section>
     <section class="result-card" data-information-role="fact" data-a7-common-exposure="true"><div class="result-card__heading"><div><p>条件応答とは別に確認</p><h2>共通走行量</h2></div>${renderStatusLabel("走行量", "info")}</div><p><strong>${escapeHtml(commonExposureTextV1(row, semantic))}</strong></p><p class="inline-helper">距離・歩数・接触回数などの走行量側の情報です。走行条件の応答が分からない部位でも、走行量を条件応答100として扱いません。</p></section>
     <section class="result-card" data-information-role="condition" data-regional-semantic-summary data-hierarchical-explanation="${escapeHtml(conditionExplanation.version || "current")}"><div class="result-card__heading"><div><p>今回の結果を理解する</p><h2>今回の記録と関連する知見</h2></div></div>${renderUserConditionExplanationV1(conditionExplanation, experience.record.id, regionId)}<details class="regional-result-reading-details"><summary>この値の読み方を確認</summary><div><ul class="body-part-evidence-list"><li>100との差は、この部位自身の条件応答の表示上の基準との差です。</li><li>数値の高低は、良し悪し、危険度、走行の可否を示しません。</li><li>条件応答の数値がない場合は、条件が基準と同じという意味ではありません。</li><li>本人の身体記録と共通走行量は、この数値とは別に確認します。</li></ul></div></details></section>
-    <section id="regional-v1-history-comparison" class="result-card" data-information-role="fact" data-regional-history-comparison><div class="result-card__heading"><div><p>過去記録との比較</p><h2>同じ部位の条件応答</h2></div>${renderStatusLabel(`比較できる記録 ${historyComparison.counts.direct}件`, "info")}</div><p class="inline-helper">同じ部位・同じ条件軸・同じ基準など、条件応答の意味が一致する記録だけ今回との差を表示します。速度系列と勾配系列などを直接つなぎません。</p>${renderHistoryComparisonV1(historyComparison)}</section>
+    <section id="regional-v1-history-comparison" class="result-card" data-information-role="fact" data-regional-history-comparison><div class="result-card__heading"><div><p>過去記録との比較</p><h2>同じ部位の条件応答</h2></div>${renderStatusLabel(`比較できる記録 ${historyComparison.counts.direct}件`, "info")}</div><p class="inline-helper">同じ部位・同じ比較指標・同じ基準・同じ対象範囲を持つ記録だけ今回との差を表示します。速度や勾配などの条件が違っても、比較指標と基準が同じ場合は同じ座標上で比較します。</p>${renderHistoryComparisonV1(historyComparison)}</section>
     <section class="result-card" data-information-role="personal"><div class="result-card__heading"><div><p>本人の記録</p><h2>本人が入力した身体記録</h2></div>${renderStatusLabel("本人の記録", "info")}</div>${observations.length ? `<div class="subjective-entry-list">${observations.map((observation) => `<article><h3>${escapeHtml(observation.label || "記録した部位")}</h3><p>${escapeHtml(bodyAreaLateralityLabel(observation.laterality))}・程度 ${Number(observation.intensity || 0)}/5${observation.noticedTiming ? `・${escapeHtml(observation.noticedTiming)}` : ""}</p></article>`).join("")}</div>` : '<p class="muted-text">この部位に対応する本人の身体記録はありません。</p>'}<p class="source-boundary">本人の身体記録と条件応答は別の情報です。両者を組み合わせて原因、危険度、走行の可否を判定しません。</p></section>
     <section class="result-card" data-information-role="limits"><div class="result-card__heading"><div><p>この表示の限界</p><h2>この表示だけでは分からないこと</h2></div></div><ul class="body-part-evidence-list"><li>筋肉・腱・骨・関節に加わった実際の力や損傷</li><li>障害名、発生確率、原因</li><li>走行の可否や安全の保証</li><li>通常の走行事実だけでは分からない左右差</li></ul></section>
     <details class="body-part-other-regions"><summary>今回の結果で別の部位を選ぶ</summary><nav class="body-part-navigation body-part-navigation--collapsed" aria-label="他の部位">${REGIONAL_V1_REGIONS.filter((item) => item.id !== regionId).map((item) => `<a class="body-part-navigation__link" href="#/body-part-detail?recordId=${encodeURIComponent(experience.record.id)}&regionId=${encodeURIComponent(item.id)}"><strong>${escapeHtml(bodyRegionFormalName(item.id, item.name))}</strong><span>詳細</span></a>`).join("")}</nav></details>
@@ -412,6 +434,11 @@ export function renderBodyPartDetailScreen({ services, context }) {
   const recordId = String(context.parameters.get("recordId") || "");
   const regionId = String(context.parameters.get("regionId") || "");
   const experience = services.workflows.records.loadExperience(recordId);
+  if (experience?.regionalV1ResultRecord?.model_version === NEW_MODEL_V1_MODEL_VERSION) {
+    const experiences = services.workflows.records.loadAllExperiences();
+    const rendered = renderNewModelV1Detail({ experience, regionId, experiences });
+    if (rendered) return rendered;
+  }
   if (experience?.regionalV1ResultRecord && REGIONAL_V1_BY_ID.has(regionId)) {
     const experiences = services.workflows.records.loadAllExperiences();
     return renderRegionalV1Detail({ experience, regionId, experiences });

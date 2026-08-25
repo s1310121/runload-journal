@@ -37,6 +37,8 @@ import {
 } from "./model/v27/v27Model.js";
 import { createV27ResultRecord } from "./model/v27/v27ResultService.js";
 import { createRegionalV1ResultRecord } from "./model/regionalV1/regionalV1ResultService.js";
+import { createNewModelV1ResultRecord } from "./model/newModelV1/newModelV1ResultService.js";
+import { calculateNewModelV1 } from "./model/newModelV1/newModelV1Engine.js";
 import { adaptStoredRecordToRegionalV1Ui } from "./model/regionalV1/regionalV1InputAdapter.js";
 import { adaptPrototypeRecord, buildRegionalEngineInput, calculateRegionalLoad, buildBodyMapPayload } from "./model/regionalV1/engine/index.js";
 
@@ -60,6 +62,7 @@ export function createApplicationServices(options = {}) {
 
   const services = {
     model: Object.freeze({
+      newModelV1: Object.freeze({ calculateNewModelV1, createNewModelV1ResultRecord }),
       regionalV1: Object.freeze({ adaptStoredRecordToRegionalV1Ui, adaptPrototypeRecord, buildRegionalEngineInput, calculateRegionalLoad, buildBodyMapPayload, createRegionalV1ResultRecord }),
       v27: Object.freeze({
         adaptRecordToV27Session,

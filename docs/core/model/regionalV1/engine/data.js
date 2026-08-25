@@ -554,9 +554,9 @@ export const FORMAL_INPUT_CATALOG = Object.freeze([
     "technicalName": "shoeType",
     "label": "シューズ種類",
     "groupId": "G06",
-    "disposition": "CONDITIONAL_NUMERIC_EFFECT",
-    "numericPermission": "DIRECT_OR_CONDITIONAL",
-    "missingnessBehavior": "Missing => omit only that evidence-gated effect and mark PARTIAL when material; never impute reference without disclosure.",
+    "disposition": "PROTOCOL_CONTEXT_NO_NUMERIC_EFFECT",
+    "numericPermission": "CONTEXT_ONLY",
+    "missingnessBehavior": "Missing does not block numeric calculation; when present the value is retained as explicit context/protocol provenance and is not assigned an isolated numeric coefficient.",
     "doubleCountingGuard": "Derived aliases and source-correlated factors require a declared canonical factor; no duplicate main effect and interaction use without decomposition."
   },
   {
@@ -564,9 +564,9 @@ export const FORMAL_INPUT_CATALOG = Object.freeze([
     "technicalName": "shoeSoftness",
     "label": "やわらかさの自己認識",
     "groupId": "G06",
-    "disposition": "CONDITIONAL_NUMERIC_EFFECT",
-    "numericPermission": "DIRECT_OR_CONDITIONAL",
-    "missingnessBehavior": "Missing => omit only that evidence-gated effect and mark PARTIAL when material; never impute reference without disclosure.",
+    "disposition": "PROTOCOL_CONTEXT_NO_NUMERIC_EFFECT",
+    "numericPermission": "CONTEXT_ONLY",
+    "missingnessBehavior": "Missing does not block numeric calculation; when present the value is retained as explicit context/protocol provenance and is not assigned an isolated numeric coefficient.",
     "doubleCountingGuard": "Derived aliases and source-correlated factors require a declared canonical factor; no duplicate main effect and interaction use without decomposition."
   },
   {
@@ -594,9 +594,9 @@ export const FORMAL_INPUT_CATALOG = Object.freeze([
     "technicalName": "footPlacementSelfReport",
     "label": "足のつき方の自己認識",
     "groupId": "G07",
-    "disposition": "CONDITIONAL_NUMERIC_EFFECT",
-    "numericPermission": "DIRECT_OR_CONDITIONAL",
-    "missingnessBehavior": "Missing => omit only that evidence-gated effect and mark PARTIAL when material; never impute reference without disclosure.",
+    "disposition": "CONDITIONAL_PLANTAR_CONTEXT_NO_ISOLATED_NUMERIC_EFFECT",
+    "numericPermission": "CONTEXT_ONLY",
+    "missingnessBehavior": "Missing does not block numeric calculation; when present the value is retained as explicit context/protocol provenance and is not assigned an isolated numeric coefficient.",
     "doubleCountingGuard": "Derived aliases and source-correlated factors require a declared canonical factor; no duplicate main effect and interaction use without decomposition."
   },
   {

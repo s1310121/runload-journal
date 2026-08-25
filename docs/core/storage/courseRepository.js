@@ -1,4 +1,4 @@
-import { SURFACE_FIELDS } from "../model/modelConstants.js";
+import { SURFACE_FIELDS, hasTreadmillOutdoorSurfaceMixFromCourse } from "../model/modelConstants.js";
 import { normalizeSingleLineText } from "../safety/inputSafety.js";
 import { createCollectionRepository } from "./collectionRepository.js";
 import { STORAGE_KEYS } from "./storageKeys.js";
@@ -173,6 +173,9 @@ export function validateCoursePresetInput(course = {}) {
   }
   if (normalized.surfaceInputMode !== "UNKNOWN" && Math.abs(surfaceTotal - 100) > 0.01) {
     return { ok: false, code: "COURSE_SURFACE_TOTAL_INVALID", message: `路面割合の合計を100%にしてください。現在は${surfaceTotal}%です。`, course: normalized };
+  }
+  if (hasTreadmillOutdoorSurfaceMixFromCourse(normalized)) {
+    return { ok: false, code: "TREADMILL_OUTDOOR_MIX_FORBIDDEN", message: "トレッドミルは屋外路面と割合で混ぜず、トレッドミルのみのコースとして保存してください。", course: normalized };
   }
   if (!SURFACE_CLASSES.has(normalized.modelSurfaceClass)) {
     return { ok: false, code: "COURSE_SURFACE_CLASS_INVALID", message: "路面の入力内容を確認してください。", course: normalized };

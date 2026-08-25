@@ -30,7 +30,7 @@ export const TEXT_SIZE_OPTIONS = Object.freeze([
 
 
 export const RESULT_DISPLAY_MODE_OPTIONS = Object.freeze([
-  Object.freeze({ value: "standard", label: "標準（入力から読む）", description: "結果画面は、今日の入力内容を先に表示し、その後で走行全体の比較用推定値と部位ごとの条件応答・共通走行量を表示します。" }),
+  Object.freeze({ value: "standard", label: "標準（入力から読む）", description: "結果画面は、今日の入力内容を先に表示し、その後で12部位の比較値を表示します。" }),
   Object.freeze({ value: "result-first", label: "結果を先に見る", description: "結果画面は、走行全体の比較用推定値と12部位の身体図を先に表示し、その後で今日の入力内容を表示します。" }),
   Object.freeze({ value: "body-focus", label: "部位を詳しく見る", description: "結果画面は、12部位の身体図と本人が入力した身体記録を先に表示し、部位詳細へ進むボタンを見つけやすくします。" }),
   Object.freeze({ value: "consultation-focus", label: "相談しやすく見る", description: "結果画面は、本人が入力した身体記録と今日の記録条件を先に表示し、相談メモの作成へつなげます。" }),
@@ -39,14 +39,14 @@ export const RESULT_DISPLAY_MODE_OPTIONS = Object.freeze([
 
 
 export const REGIONAL_RESULT_INITIAL_VIEW_OPTIONS = Object.freeze([
-  Object.freeze({ value: "focus", label: "条件応答を数値化できた部位を先に表示", description: "根拠に基づいて数値化できた部位を身体図と同じ固定順で表示します。数値の大きさによる並べ替えや部位間ランキングはしません。" }),
+  Object.freeze({ value: "focus", label: "12部位の比較値を先に表示", description: "12部位を身体図と同じ固定順で表示します。数値の大きさによる並べ替えや部位間ランキングはしません。" }),
   Object.freeze({ value: "all", label: "全12部位を先に表示", description: "結果画面を開いたときから、12部位を解剖学的な順序で表示します。" }),
-  Object.freeze({ value: "remember", label: "前回の切替を引き継ぐ", description: "結果画面で最後に選んだ「条件応答を数値化できた部位／全12部位」を次回も使います。" }),
+  Object.freeze({ value: "remember", label: "前回の切替を引き継ぐ", description: "結果画面で最後に選んだ表示方法を次回も使います。" }),
 ]);
 
 export const REGIONAL_PREVIOUS_COMPARISON_OPTIONS = Object.freeze([
   Object.freeze({ value: "show", label: "表示する", description: "同じ部位・同じ基準など、同じ意味で比べられる最新記録がある場合だけ、部位カードへ前回からの増減率を小さく表示します。" }),
-  Object.freeze({ value: "hide", label: "表示しない", description: "各部位の条件応答を表示し、数値化できる場合だけその部位自身の基準100との関係を示します。保存結果や履歴は変更しません。" }),
+  Object.freeze({ value: "hide", label: "表示しない", description: "各部位の比較値を表示し、その部位自身の基準100との関係を示します。保存結果や履歴は変更しません。" }),
 ]);
 
 export const EXTERNAL_LINK_DISPLAY_OPTIONS = Object.freeze([
