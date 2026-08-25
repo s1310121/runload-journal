@@ -1,4 +1,5 @@
-const CACHE_NAME = "runload-new-model-v2-8c4-20260825-cache-1";
+const CACHE_NAME = "runload-new-model-v2-8c5-20260825-cache-1";
+const RUNLOAD_CACHE_PREFIXES = ["running-journal-", "runload-journal-", "runload-new-model-"];
 const PRECACHE_URLS = [
   "./app.js",
   "./core/applicationServices.js",
@@ -253,7 +254,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(keys
-        .filter((key) => (key.startsWith("running-journal-") || key.startsWith("runload-journal-")) && key !== CACHE_NAME)
+        .filter((key) => RUNLOAD_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix)) && key !== CACHE_NAME)
         .map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   );
@@ -276,16 +277,18 @@ self.addEventListener("fetch", (event) => {
 
   if (!PRECACHE_PATHS.has(url.pathname)) return;
   event.respondWith(
-    caches.match(request, { ignoreSearch: true }).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
-        if (response.ok && response.type === "basic") {
-          const copy = response.clone();
-          event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)));
-        }
-        return response;
-      });
-    })
+    caches.open(CACHE_NAME).then((cache) => (
+      cache.match(request, { ignoreSearch: true }).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((response) => {
+          if (response.ok && response.type === "basic") {
+            const copy = response.clone();
+            event.waitUntil(cache.put(request, copy));
+          }
+          return response;
+        });
+      })
+    ))
   );
 });
 

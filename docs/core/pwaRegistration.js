@@ -50,7 +50,9 @@ async function clearLocalPwaDeliveryState() {
   if ("caches" in window) {
     const keys = await caches.keys();
     const runLoadKeys = keys.filter((key) => (
-      key.startsWith("runload-journal-") || key.startsWith("running-journal-")
+      key.startsWith("runload-journal-")
+      || key.startsWith("running-journal-")
+      || key.startsWith("runload-new-model-")
     ));
     await Promise.all(runLoadKeys.map((key) => caches.delete(key)));
   }
@@ -71,6 +73,7 @@ export function registerPwaServiceWorker() {
   window.addEventListener("load", async () => {
     try {
       const registration = await navigator.serviceWorker.register("./service-worker.js");
+      await registration.update();
       if (registration.waiting && navigator.serviceWorker.controller) {
         showUpdateNotice(registration);
       }
