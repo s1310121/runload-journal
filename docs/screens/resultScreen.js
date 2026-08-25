@@ -119,7 +119,7 @@ function subjectiveObservationHistory(experiences = [], record = {}, observation
   });
 }
 
-function renderSubjectiveFeedback(feedback = {}, record = {}, experiences = []) {
+function renderSubjectiveFeedback(feedback = {}, record = {}, experiences = [], { newModelRecord = false } = {}) {
   const status = feedback?.checkStatus || "not_asked";
   const enteredBodyParts = getEnteredBodyParts(feedback);
   const exactObservations = Array.isArray(feedback?.bodyAreaObservations)
@@ -155,7 +155,7 @@ function renderSubjectiveFeedback(feedback = {}, record = {}, experiences = []) 
     ${activeFlags.length ? `<div class="safety-flag-summary"><h3>体調確認で選んだ内容</h3><ul>${activeFlags.map(([flag]) => `<li>${escapeHtml(SAFETY_FLAG_LABELS[flag] || flag)}</li>`).join("")}</ul></div>` : ""}
     ${feedback?.unexpectedSymptom ? '<p class="notice-text">「いつもと違う、説明しにくい症状がある」と入力されています。</p>' : ""}
     ${feedback?.consultationNote ? `<div class="consultation-note"><h3>コーチや指導者へ伝えたいこと</h3><p>${escapeHtml(feedback.consultationNote).replaceAll("\n", "<br>")}</p></div>` : ""}
-    <p class="source-boundary">ここは本人が入力した記録です。部位ごとの条件応答とは分けて表示し、改善・悪化を自動判定しません。</p>
+    <p class="source-boundary">ここは本人が入力した記録です。${newModelRecord ? "12部位の比較値" : "部位ごとの条件応答"}とは分けて表示し、改善・悪化を自動判定しません。</p>
   </section>`;
 }
 
@@ -167,7 +167,7 @@ function renderLegacyResultCard() {
 }
 
 function renderRestRegionalCard() {
-  return `<section class="result-card result-card--distribution" data-information-role="model" aria-labelledby="distribution-title"><div class="result-card__heading"><div><p>12部位の条件応答</p><h2 id="distribution-title">部位ごとの条件応答</h2></div>${renderStatusLabel("休養記録", "neutral")}</div><div class="rest-distribution"><p>休養日には走行条件に基づく部位ごとの条件応答を作成しません。</p></div></section>`;
+  return `<section class="result-card result-card--distribution" data-information-role="model" aria-labelledby="distribution-title"><div class="result-card__heading"><div><p>12部位の比較値</p><h2 id="distribution-title">走行による部位別比較値はありません</h2></div>${renderStatusLabel("休養記録", "neutral")}</div><div class="rest-distribution"><p>休養日には走行距離と走行条件に基づく12部位の比較値を作成しません。</p></div></section>`;
 }
 
 function renderPrioritySupportAction(experience) {
@@ -194,12 +194,12 @@ function resultDisplayModeLabel(mode = "standard") {
   return RESULT_DISPLAY_MODE_OPTIONS.find((option) => option.value === mode)?.label || "標準";
 }
 
-function renderResultReadingSummary(experience, mode, hasSubjectiveCard = true) {
+function renderResultReadingSummary(experience, mode, hasSubjectiveCard = true, newModelRecord = false) {
   const record = experience.record || {};
   const items = {
     record: { href: "#record-facts-title", title: "今回の記録条件" },
     total: { href: "#recent-comparison-title", title: "走行全体の比較用推定値" },
-    regional: { href: "#distribution-title", title: "部位ごとの条件応答" },
+    regional: { href: "#distribution-title", title: newModelRecord ? "12部位の比較値" : "部位ごとの条件応答" },
     subjective: { href: hasSubjectiveCard ? "#subjective-feedback" : "#result-subjective-followup-title", title: "本人が残した身体記録" },
     next: { href: "#result-activation-title", title: "この結果を次に活かす" },
   };
@@ -233,14 +233,27 @@ function renderResultActivationHub(experience, observationCandidate = null) {
   return `<section class="result-activation-hub" aria-labelledby="result-activation-title"><div class="section-heading section-heading--compact"><p>この結果を次に活かす</p><h2 id="result-activation-title">次にすることを自分で選ぶ</h2><p>理解・共有・次回の観察・予定をこの場所から選びます。アプリは走行可否や練習の正解を決めません。</p></div>${observationPrompt}<div class="result-activation-hub__grid">${links.map((item) => `<a class="result-activation-hub__item" href="${escapeHtml(item.href)}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.description)}</small><span aria-hidden="true">→</span></a>`).join("")}</div></section>`;
 }
 
-function renderResultGuide() {
+function renderResultGuide({ newModelRecord = false } = {}) {
+  if (newModelRecord) {
+    return renderScreenGuide({
+      id: "result-guide",
+      summary: "保存した事実、12部位の比較値、走行全体の比較用推定値を、それぞれの意味を混ぜずに確認できます。",
+      sections: [
+        { title: "まずここでやること", body: "今回の記録、12部位の比較値、走行全体の過去記録との比較を順に見返します。" },
+        { title: "12部位の比較値", body: "身体図または固定順の一覧で確認します。各部位の100は、その部位自身の1 km基準走行を表します。今回の走行距離と条件を含む値なので、同じ部位の記録どうしで比べ、異なる部位を数値で順位付けしません。" },
+        { title: "範囲外の扱い", body: "現在の12部位モデルの範囲外では外挿せず、部位別数値を表示しません。分からない任意条件も効果なしとは扱いません。" },
+        { title: "走行全体の比較用推定値", body: "別のモデルによる参考値として、同じ意味で比べられる過去記録と見返します。12部位の比較値とは同じ尺度ではありません。" },
+      ],
+      tutorialId: "result",
+    });
+  }
   return renderScreenGuide({
     id: "result-guide",
-    summary: "保存した事実、走行全体の比較用推定値、部位ごとの条件応答と共通走行量の読み分けを確認できます。",
+    summary: "この保存記録で使われた、部位ごとの条件応答と走行全体の比較用推定値の読み分けを確認できます。",
     sections: [
-      { title: "まずここでやること", body: "今回の記録、部位ごとの条件応答、走行全体の過去記録との比較を順に見返します。" },
-      { title: "部位の表示", body: "12部位を固定順で確認します。条件応答を根拠に基づいて数値化できる部位だけ、その部位固有の表示上の基準100と比較して表示し、数値化できない部位は「数値なし」と表示します。部位間ランキングはしません。" },
-      { title: "走行全体の比較用推定値", body: "走った量とコース条件をまとめた参考値を、同じ意味で比べられる過去記録の中央値と小型グラフで見返します。高低は良し悪しを示しません。" },
+      { title: "まずここでやること", body: "今回の記録、保存時の部位ごとの条件応答、走行全体の過去記録との比較を順に見返します。" },
+      { title: "部位の表示", body: "この記録は保存時の数値定義で表示します。現在の新しい12部位の比較値とは直接比較しません。" },
+      { title: "走行全体の比較用推定値", body: "走った量とコース条件をまとめた参考値を、同じ意味で比べられる過去記録と見返します。高低は良し悪しを示しません。" },
     ],
     tutorialId: "result",
   });
@@ -278,11 +291,11 @@ export function renderResultScreen({ services, context }) {
   const settings = normalizeJournalSettings(services.storage.settings.load());
   const recordCard = renderRecordFactsCard(record);
   const personalContextCard = renderPersonalContext(record);
-  const subjectiveCard = renderSubjectiveFeedback(feedback || {}, record, allExperiences);
+  const newModelRecord = regionalV1ResultRecord?.model_version === NEW_MODEL_V1_MODEL_VERSION;
+  const subjectiveCard = renderSubjectiveFeedback(feedback || {}, record, allExperiences, { newModelRecord });
   const totalCard = v27ResultRecord
     ? renderV27TotalCard({ resultRecord: v27ResultRecord, comparison })
     : renderLegacyResultCard(experience);
-  const newModelRecord = regionalV1ResultRecord?.model_version === NEW_MODEL_V1_MODEL_VERSION;
   const previousComparisons = regionalV1ResultRecord && !newModelRecord
     ? buildA7ConditionPreviousComparableMap({ currentExperience: experience, experiences: allExperiences })
     : {};
@@ -291,7 +304,7 @@ export function renderResultScreen({ services, context }) {
     : settings.regionalResultInitialView;
   const regionalCard = regionalV1ResultRecord
     ? (newModelRecord
-      ? renderNewModelV1Card({ resultRecord: regionalV1ResultRecord, experiences: allExperiences })
+      ? renderNewModelV1Card({ resultRecord: regionalV1ResultRecord, experiences: allExperiences, initialView: regionalInitialView, showPreviousComparison: settings.showRegionalPreviousComparison })
       : renderRegionalV1Card({
         resultRecord: regionalV1ResultRecord,
         previousComparisons,
@@ -302,7 +315,7 @@ export function renderResultScreen({ services, context }) {
       ? renderRestRegionalCard()
       : "";
   const fragments = {
-    summary: renderResultReadingSummary(experience, settings.resultDisplayMode, Boolean(subjectiveCard)),
+    summary: renderResultReadingSummary(experience, settings.resultDisplayMode, Boolean(subjectiveCard), newModelRecord),
     record: recordCard,
     personal: personalContextCard,
     subjective: subjectiveCard,
@@ -323,6 +336,6 @@ export function renderResultScreen({ services, context }) {
     ${orderedResultSections(settings.resultDisplayMode, fragments)}
     ${renderSubjectiveFollowUpAction(experience)}
     ${renderResultActivationHub(experience, observationContext.observationCandidate)}
-    ${renderResultGuide()}
+    ${renderResultGuide({ newModelRecord })}
   </section>`;
 }

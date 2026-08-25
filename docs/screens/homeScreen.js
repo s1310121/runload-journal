@@ -41,7 +41,7 @@ function renderPrimaryAction(experience, draft) {
 }
 
 function renderBeginnerSteps() {
-  return `<section class="home-start-steps" aria-labelledby="home-start-steps-title"><div class="section-heading"><p>3つの基本ステップ</p><h2 id="home-start-steps-title">記録から振り返りまで</h2></div><ol><li><span>1</span><div><strong>記録する</strong><p>距離・実走時間を中心に、分かる条件だけ入力。</p></div></li><li><span>2</span><div><strong>結果を見る</strong><p>走行全体の比較用推定値と、12部位の条件応答・共通走行量。</p></div></li><li><span>3</span><div><strong>結果を活用する</strong><p>理解・共有・予定から次の行動を選ぶ。</p></div></li></ol><div class="home-start-steps__links"><a class="text-link" href="#/activation">活用の入口を開く</a><a class="text-link" href="#/plan">次の予定を作る</a><a class="text-link" href="#/consultation">相談内容を整理する</a><a class="text-link" href="#/column">読みものを開く</a></div></section>`;
+  return `<section class="home-start-steps" aria-labelledby="home-start-steps-title"><div class="section-heading"><p>3つの基本ステップ</p><h2 id="home-start-steps-title">記録から振り返りまで</h2></div><ol><li><span>1</span><div><strong>記録する</strong><p>距離・実走時間を中心に、分かる条件だけ入力。</p></div></li><li><span>2</span><div><strong>結果を見る</strong><p>走行全体の比較用推定値と、同じ部位で比べる12部位の比較値。</p></div></li><li><span>3</span><div><strong>結果を活用する</strong><p>理解・共有・予定から次の行動を選ぶ。</p></div></li></ol><div class="home-start-steps__links"><a class="text-link" href="#/activation">活用の入口を開く</a><a class="text-link" href="#/plan">次の予定を作る</a><a class="text-link" href="#/consultation">相談内容を整理する</a><a class="text-link" href="#/column">読みものを開く</a></div></section>`;
 }
 
 function renderLatestRecord(experience) {

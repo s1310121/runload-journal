@@ -39,8 +39,8 @@ export const RESULT_DISPLAY_MODE_OPTIONS = Object.freeze([
 
 
 export const REGIONAL_RESULT_INITIAL_VIEW_OPTIONS = Object.freeze([
-  Object.freeze({ value: "focus", label: "12部位の比較値を先に表示", description: "12部位を身体図と同じ固定順で表示します。数値の大きさによる並べ替えや部位間ランキングはしません。" }),
-  Object.freeze({ value: "all", label: "全12部位を先に表示", description: "結果画面を開いたときから、12部位を解剖学的な順序で表示します。" }),
+  Object.freeze({ value: "focus", label: "身体図を先に表示", description: "前面・後面・足裏の身体図から部位を選び、同じ固定順の比較値を確認します。身体図の色や位置で数値の大小・危険度を表しません。" }),
+  Object.freeze({ value: "all", label: "12部位一覧を先に表示", description: "結果画面を開いたときから、12部位の比較値を解剖学的な固定順で一覧表示します。数値順には並べ替えません。" }),
   Object.freeze({ value: "remember", label: "前回の切替を引き継ぐ", description: "結果画面で最後に選んだ表示方法を次回も使います。" }),
 ]);
 

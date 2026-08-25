@@ -1,4 +1,4 @@
-const CACHE_NAME = "runload-new-model-v2-8c2-20260825-cache-1";
+const CACHE_NAME = "runload-new-model-v2-8c3-20260825-cache-1";
 const PRECACHE_URLS = [
   "./app.js",
   "./core/applicationServices.js",

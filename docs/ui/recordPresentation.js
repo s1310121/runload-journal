@@ -98,7 +98,11 @@ export function createNeutralResultSummary(experience = {}) {
   const resultRecord = experience.v27ResultRecord;
   if (resultRecord?.state === "RUN") {
     const total = resultRecord.result?.total?.central_points;
-    return `${activity}しました。走行全体の比較用推定値は${formatNumber(total, 1)}推定ポイントです。部位ごとの条件応答と共通走行量は、結果画面で全12部位を確認できます。本人の身体記録は「${subjectiveLabel}」として別に保存されています。`;
+    const isNewModel = experience.regionalV1ResultRecord?.model_version === "runload-new-model-v1.0";
+    const regionalSummary = isNewModel
+      ? "12部位の比較値は、各部位自身の1 km基準100に対する今回の距離と条件を含む値として確認できます。異なる部位どうしは順位付けしません。"
+      : "部位ごとの条件応答と共通走行量は、結果画面で全12部位を確認できます。";
+    return `${activity}しました。走行全体の比較用推定値は${formatNumber(total, 1)}推定ポイントです。${regionalSummary}本人の身体記録は「${subjectiveLabel}」として別に保存されています。`;
   }
   return `${activity}しました。この保存記録では一部の比較表示を利用できません。本人の身体記録は「${subjectiveLabel}」として保存されています。`;
 }

@@ -135,7 +135,7 @@ function buildColumnRecommendation(services, experience, allExperiences = [], co
     return recommendation("slope-endpoints", `${REGION_BY_ID.get(selectedRegionId)?.label || selectedRegionId}の値が表す内容と読み方に関連する記事です。`);
   }
   if (observations.length) {
-    return recommendation("regional-six-eight-28", `${observations.slice(0, 2).map((item) => item.label).join("、")}の本人入力と12部位の条件応答表示を分けて読む記事です。`);
+    return recommendation("regional-six-eight-28", `${observations.slice(0, 2).map((item) => item.label).join("、")}の本人入力と12部位の比較値を分けて読む記事です。`);
   }
   if (hasNutritionHydrationContext) {
     return recommendation("hydration-not-more-is-better", "食事・水分の本人メモに関連する一般知識です。量や必要性を判断するものではありません。");
@@ -223,7 +223,7 @@ function renderArticleSections(articles, categories, featuredId) {
     const categoryArticles = articles.filter((article) => article.category === category && article.id !== featuredId);
     if (!categoryArticles.length) return "";
     const descriptions = {
-      "結果の読み方": "12部位の条件応答と共通走行量、走行全体の比較用推定値の違いを説明します。",
+      "結果の読み方": "12部位の比較値、走行全体の比較用推定値、本人入力の違いを説明します。",
       "入力と振り返り": "走り全体のきつさ（RPE）、過去比較、履歴、予定値を分けて見返します。",
       "走りとのつき合い方": "練習量、目標、生活や環境の背景を、一つの正解や評価に変えずに考えます。",
       "走る前・走っている間": "睡眠、暑さ、会話のしやすさを、一つの数値や基準だけで決めずに考えます。",
