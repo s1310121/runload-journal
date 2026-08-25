@@ -6442,9 +6442,48 @@ html.rl-appearance-dark .screen--notebook-magazine .check-option:has(input:check
   padding-top: var(--space-2);
 }
 .regional-result-card .regional-result-row__chips { margin-top: auto; }
+
+/* C7: keep focus and all-region cards on the same readable horizontal layout. */
+.regional-result-card > a {
+  padding: var(--space-4);
+  row-gap: var(--space-3);
+}
+.regional-result-card .regional-result-row__name {
+  min-width: 0;
+  line-height: 1.35;
+  writing-mode: horizontal-tb;
+}
+.regional-result-card .regional-result-row__name strong {
+  font-size: 1rem;
+  line-height: 1.35;
+  writing-mode: horizontal-tb;
+}
+.regional-result-card .regional-result-row__name small,
+.regional-result-card .regional-result-row__value small {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+.regional-result-card .regional-result-row__direction {
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.regional-result-row__scale i em {
+  font-size: 0.72rem;
+}
+.regional-result-card .regional-result-row__previous strong {
+  font-size: 0.86rem;
+}
+.regional-result-card .regional-result-row__previous small {
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+.regional-result-card .regional-result-row__chips small {
+  font-size: 0.76rem;
+  line-height: 1.3;
+}
 @media (min-width: 64rem) {
   .regional-v1-overview { grid-template-columns: minmax(17rem, 0.78fr) minmax(0, 1.22fr); }
-  [data-regional-v1-panel="all"] .regional-result-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  [data-regional-v1-panel="all"] .regional-result-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 38rem) {
   .regional-result-grid { grid-template-columns: 1fr; }

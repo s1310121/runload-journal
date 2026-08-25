@@ -70,6 +70,14 @@ function sameDistanceDirection(resultRecord, value) {
   if (!finite(referenceValue)) return direction(value);
   return direction(value, referenceValue, `同じ部位の同距離基準${fmt(referenceValue, 1)}`, displaySalienceThreshold(referenceValue));
 }
+function compactSameDistanceDirection(resultRecord, value) {
+  const referenceValue = sameDistanceReferenceValue(resultRecord);
+  if (!finite(value) || !finite(referenceValue)) return "数値なし";
+  const delta = deltaFromComparison(value, referenceValue);
+  const tolerance = displaySalienceThreshold(referenceValue);
+  if (Math.abs(delta) < tolerance) return `同距離基準${fmt(referenceValue, 1)}付近（${delta > 0 ? "+" : ""}${fmt(delta, 1)}ポイント）`;
+  return `同距離基準${fmt(referenceValue, 1)}比 ${delta > 0 ? "+" : ""}${fmt(delta, 1)}ポイント`;
+}
 function provenanceLabel(row = {}) {
   const value = String(row.provenance || "");
   if (value.includes("BOUNDED_PROVISIONAL")) return "限定範囲の推定";
@@ -105,7 +113,7 @@ function previousInfo(resultRecord, experiences, row) {
 function previousMarkup(resultRecord, experiences, row, show = true) {
   if (!show) return "";
   const info = previousInfo(resultRecord, experiences, row);
-  if (!info.previous) return '<span class="regional-result-row__previous"><strong>前回比較なし</strong><small>同じ部位・同じ定義・同じ基準で比べられる過去記録はまだありません</small></span>';
+  if (!info.previous) return '<span class="regional-result-row__previous"><strong>前回比較なし</strong></span>';
   return `<span class="regional-result-row__previous" data-previous-comparison="comparable"><strong>前回との差 ${info.delta >= 0 ? "+" : ""}${escapeHtml(fmt(info.delta, 1))}ポイント</strong><small>${escapeHtml(formatLocalDate(info.previous.experience.record.date))}・同じ部位、同じ定義、同じ基準で比較</small></span>`;
 }
 function staticRows() { return NEW_MODEL_REGION_DEFS.map((def) => ({ regionId: def.displayId, newModelRegionId: def.id, regionName: def.name, value: null })); }
@@ -158,13 +166,13 @@ function renderList(resultRecord, rows, experiences, showPreviousComparison, foc
     const delta = deltaFromComparison(row.value, referenceValue);
     const signal = focusSignals.get(row.regionId) || null;
     const value = finite(row.value)
-      ? `<strong><span aria-hidden="true">${directionSymbol(row.value, referenceValue, displaySalienceThreshold(referenceValue))}</span> ${escapeHtml(fmt(row.value, 1))}</strong><small>同距離基準${escapeHtml(referenceText)}から ${Math.abs(delta) < 0.05 ? "±0" : `${delta > 0 ? "+" : ""}${escapeHtml(fmt(delta, 1))}`}ポイント</small>`
+      ? `<strong><span aria-hidden="true">${directionSymbol(row.value, referenceValue, displaySalienceThreshold(referenceValue))}</span> ${escapeHtml(fmt(row.value, 1))}</strong>`
       : '<span class="regional-result-row__building">数値なし</span>';
     const meter = finite(row.value) && finite(referenceValue)
       ? `<span class="regional-result-row__scale" aria-label="同じ部位の同距離基準${escapeHtml(referenceText)}を中央とする表示位置"><i aria-hidden="true"><em>同距離基準${escapeHtml(referenceText)}</em></i><b style="--regional-position:${visualPosition(row.value, referenceValue)}%"></b></span>`
       : "";
     const focusChip = signal ? `<small data-focus-reason="${escapeHtml(signal.reasons.join("+"))}">今回注目：${escapeHtml(signal.reasons.join("・"))}</small>` : "";
-    return `<li class="regional-result-card" data-direction="${state}"><a href="#/body-part-detail?recordId=${encodeURIComponent(resultRecord.record_id)}&regionId=${encodeURIComponent(row.regionId)}" aria-label="${escapeHtml(`${formal}の詳細を開く`)}"><span class="regional-result-row__name"><strong>${escapeHtml(formal)}</strong>${familiar && familiar !== formal ? `<small class="body-region-familiar">${escapeHtml(familiar)}</small>` : ""}</span><span class="regional-result-row__value">${value}</span>${meter}<span class="regional-result-row__direction">${escapeHtml(sameDistanceDirection(resultRecord, row.value))}</span>${previousMarkup(resultRecord, experiences, row, showPreviousComparison)}<span class="regional-result-row__chips">${focusChip}<small>${escapeHtml(provenanceLabel(row))}</small>${optional.length ? `<small>${escapeHtml(`${optional.join("・")}の条件を反映`)}</small>` : ""}</span></a></li>`;
+    return `<li class="regional-result-card" data-direction="${state}"><a href="#/body-part-detail?recordId=${encodeURIComponent(resultRecord.record_id)}&regionId=${encodeURIComponent(row.regionId)}" aria-label="${escapeHtml(`${formal}の詳細を開く`)}"><span class="regional-result-row__name"><strong>${escapeHtml(formal)}</strong>${familiar && familiar !== formal ? `<small class="body-region-familiar">${escapeHtml(familiar)}</small>` : ""}</span><span class="regional-result-row__value">${value}</span>${meter}<span class="regional-result-row__direction">${escapeHtml(compactSameDistanceDirection(resultRecord, row.value))}</span>${previousMarkup(resultRecord, experiences, row, showPreviousComparison)}<span class="regional-result-row__chips">${focusChip}<small>${escapeHtml(provenanceLabel(row))}</small>${optional.length ? `<small>${escapeHtml(`${optional.join("・")}の条件を反映`)}</small>` : ""}</span></a></li>`;
   }).join("")}</ul>`;
 }
 function renderFocusContent(resultRecord, candidates, experiences, showPreviousComparison) {
