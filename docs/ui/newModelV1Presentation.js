@@ -209,21 +209,17 @@ export function renderNewModelV1Card({ resultRecord, experiences = [], initialVi
   const focusContent = renderFocusContent(resultRecord, candidates, experiences, showPreviousComparison);
   return `<section class="result-card result-card--distribution result-card--regional-v27" data-new-model-v1-card data-regional-v1-card data-regional-v1-view="${resolvedView}" data-information-role="model" aria-labelledby="new-model-regional-title">
     <div class="result-card__heading"><div><p>今回の走行量と条件を含む部位別比較</p><h2 id="new-model-regional-title">12部位の比較値</h2></div>${renderStatusLabel("部位ごとの表示", "model")}</div>
-    <p class="inline-helper"><strong>100は、その部位自身の1 km基準走行を表す比較用の座標です。</strong> 安全値・正常値・初心者平均・推奨値ではありません。走行距離はこの比較値に含まれます。</p>
-    ${finite(referenceValue) ? `<p class="inline-helper"><strong>今回の計算対象距離${escapeHtml(fmt(distance, 2))} kmでは、同じ距離にそろえた部位ごとの基準表示は${escapeHtml(referenceText)}です。</strong> 右の矢印・バーと身体図の色は、各部位をこの同距離基準と比べた方向を示します。異なる部位どうしを比べる基準ではありません。</p>` : ""}
-    <p class="inline-helper">部位ごとに基礎となる研究上の指標が異なるため、別部位どうしの数値を順位付けしたり、同じ物理量として比較したりしません。</p>
-    ${hasFallback ? '<p class="inline-helper"><strong>任意条件の一部は数値化していません。</strong> 情報がない、根拠が十分でない、または対象範囲外の任意条件は「効果0」とせず、その補正を使わず基準計算を維持しています。</p>' : ""}
+    <p class="inline-helper"><strong>100は各部位自身の1 km基準です。</strong>${finite(referenceValue) ? ` 今回の矢印・バー・身体図の色は、同距離基準${escapeHtml(referenceText)}と比べた方向を示します。` : ""} 部位間の順位や危険度を示すものではありません。</p>
     <div class="regional-v1-view-toggle" role="group" aria-label="表示する部位"><button type="button" data-regional-v1-view-button="focus" aria-pressed="${resolvedView === "focus"}"${hasFocus ? "" : " disabled"}>今回注目する部位${hasFocus ? ` (${candidates.length})` : ""}</button><button type="button" data-regional-v1-view-button="all" aria-pressed="${resolvedView === "all"}">全12部位</button></div>
-    <p class="muted-text">${escapeHtml(focusReasonText(candidates))} 危険度や部位間の負荷順位を示す切替ではありません。</p>
     <ul class="regional-direction-legend" aria-label="身体図の色と記号"><li data-direction="above"><span aria-hidden="true">↑</span>同距離基準より上</li><li data-direction="reference"><span aria-hidden="true">=</span>同距離基準付近</li><li data-direction="below"><span aria-hidden="true">↓</span>同距離基準より下</li><li data-direction="unavailable"><span aria-hidden="true">—</span>表示なし</li></ul>
     <div class="regional-v1-overview">
-      <div class="regional-v1-overview__map">${renderMap(resultRecord, rows)}<p class="muted-text">色は各部位自身の同距離基準に対する方向だけを示します。部位間の数値順位・危険度・良し悪しは表しません。部位を選ぶと詳細を開けます。</p></div>
+      <div class="regional-v1-overview__map">${renderMap(resultRecord, rows)}<p class="muted-text">色は同じ部位の同距離基準に対する方向です。部位を選ぶと詳細を開けます。</p></div>
       <div class="regional-v1-overview__feedback">
         <div class="regional-result-list" data-regional-v1-panel="focus"${resolvedView === "focus" ? "" : " hidden"}>${focusContent}</div>
         <div class="regional-result-list" data-regional-v1-panel="all"${resolvedView === "all" ? "" : " hidden"}>${renderList(resultRecord, rows, experiences, showPreviousComparison)}</div>
       </div>
     </div>
-    <details class="regional-claim-boundary"><summary>この値と過去比較の読み方</summary><div><p>100は各部位自身の1 km基準です。今回の画面では、走行距離の影響だけで全身が一様に大きく見えることを避けるため、矢印・バー・身体図の色は同じ距離にそろえた各部位自身の基準と比べます。</p><p>「今回注目する部位」は、同部位内で1%以上上向いた部位を使って情報量を絞ります。この1%は表示の整理だけに使い、医学的・統計的な意味を持ちません。両方の理由がある部位を先にし、同じ段階の中は固定の部位順です。</p><p>部位ごとに値が表す研究上の指標が異なるため、異なる部位の数値差や上向き幅を共通の物理量として順位付けしません。</p><p>値の増減は傷害リスク、危険度、改善・悪化、走行可否を意味しません。</p><p>本人が入力した身体記録は、この比較値とは別の情報として保存・表示します。</p></div></details>
+    <details class="regional-claim-boundary"><summary>この値と過去比較の読み方</summary><div><h3>比較値と同距離基準</h3><p>100は各部位自身の1 km基準です。走行距離はこの比較値に含まれます。矢印・バー・身体図の色は、走行距離だけで全身が一様に大きく見えることを避けるため、今回と同じ距離にそろえた各部位自身の基準${finite(referenceValue) ? `（この記録では${escapeHtml(referenceText)}）` : ""}と比べた方向を示します。</p><h3>「今回注目する部位」の選び方</h3><p>${escapeHtml(focusReasonText(candidates))}</p><h3>過去記録との比較</h3><p>過去比較は、同じ部位・同じ定義・同じ基準・互換性のあるモデルで比べられる保存記録がある場合だけ表示します。比較できる過去記録がない場合は「前回比較なし」と表示します。</p>${hasFallback ? '<h3>任意条件を数値化できない場合</h3><p>情報がない、根拠が十分でない、または対象範囲外の任意条件は「効果0」とせず、その補正を使わず基準計算を維持します。</p>' : ""}<h3>この表示が意味しないこと</h3><p>100は安全値・正常値・初心者平均・推奨値ではありません。部位ごとに値が表す研究上の指標が異なるため、別部位どうしの数値を順位付けしたり、異なる部位の数値差や上向き幅を共通の物理量として扱ったりしません。値の増減は傷害リスク、危険度、改善・悪化、走行可否を意味しません。</p><p>本人が入力した身体記録は、この比較値とは別の情報として保存・表示します。</p></div></details>
   </section>`;
 }
 function sourceLabels(resultRecord, row) { const registry = resultRecord?.source_registry || {}; return (row?.sourceIds || []).map((id) => registry[id]?.label || id); }
