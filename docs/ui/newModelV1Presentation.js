@@ -37,11 +37,19 @@ const VIEWS = [
 
 function finite(value) { return value !== null && value !== "" && Number.isFinite(Number(value)); }
 function fmt(value, digits = 1) { return finite(value) ? Number(value).toFixed(digits).replace(/\.0$/, "") : "—"; }
+function deltaFromReference(value) { return finite(value) ? Number(value) - 100 : null; }
+function directionStateValue(value) {
+  if (!finite(value)) return "unavailable";
+  const delta = deltaFromReference(value);
+  if (Math.abs(delta) < 0.05) return "reference";
+  return delta > 0 ? "above" : "below";
+}
+function directionSymbol(value) { return ({ above: "↑", below: "↓", reference: "=", unavailable: "—" })[directionStateValue(value)]; }
 function direction(value) {
   if (!finite(value)) return "数値なし";
-  const n = Number(value);
-  if (Math.abs(n - 100) < 0.05) return "同じ部位の基準100付近";
-  return n > 100 ? "同じ部位の基準100より高い" : "同じ部位の基準100より低い";
+  const delta = deltaFromReference(value);
+  if (Math.abs(delta) < 0.05) return "同じ部位の1 km基準100と同じ";
+  return `同じ部位の1 km基準100から${delta > 0 ? "+" : ""}${fmt(delta, 1)}ポイント`;
 }
 function provenanceLabel(row = {}) {
   const value = String(row.provenance || "");
@@ -70,47 +78,70 @@ function comparableHistory({ resultRecord, experiences = [], regionId }) {
     .sort((a, b) => String(b.experience.record?.date || "").localeCompare(String(a.experience.record?.date || "")));
 }
 function latestPrevious(args) { return comparableHistory(args)[0] || null; }
+function previousInfo(resultRecord, experiences, row) {
+  const previous = latestPrevious({ resultRecord, experiences, regionId: row.regionId });
+  if (!previous || !finite(row.value) || !finite(previous.row?.value)) return { previous: null, delta: null };
+  return { previous, delta: Number(row.value) - Number(previous.row.value) };
+}
 function previousMarkup(resultRecord, experiences, row, show = true) {
   if (!show) return "";
-  const previous = latestPrevious({ resultRecord, experiences, regionId: row.regionId });
-  if (!previous) return '<span class="regional-result-row__previous"><strong>前回比較なし</strong><small>同じ部位・同じ定義・同じ基準で比べられる過去記録はまだありません</small></span>';
-  const delta = Number(row.value) - Number(previous.row.value);
-  return `<span class="regional-result-row__previous"><strong>前回との差 ${delta >= 0 ? "+" : ""}${escapeHtml(fmt(delta, 1))}ポイント</strong><small>${escapeHtml(formatLocalDate(previous.experience.record.date))}・同じ部位、同じ定義、同じ基準で比較</small></span>`;
-}
-function compactPrevious(resultRecord, experiences, row, show = true) {
-  if (!show) return "";
-  const previous = latestPrevious({ resultRecord, experiences, regionId: row.regionId });
-  if (!previous) return '<small>前回比較なし</small>';
-  const delta = Number(row.value) - Number(previous.row.value);
-  return `<small>前回比 ${delta >= 0 ? "+" : ""}${escapeHtml(fmt(delta, 1))}</small>`;
+  const info = previousInfo(resultRecord, experiences, row);
+  if (!info.previous) return '<span class="regional-result-row__previous"><strong>前回比較なし</strong><small>同じ部位・同じ定義・同じ基準で比べられる過去記録はまだありません</small></span>';
+  return `<span class="regional-result-row__previous" data-previous-comparison="comparable"><strong>前回との差 ${info.delta >= 0 ? "+" : ""}${escapeHtml(fmt(info.delta, 1))}ポイント</strong><small>${escapeHtml(formatLocalDate(info.previous.experience.record.date))}・同じ部位、同じ定義、同じ基準で比較</small></span>`;
 }
 function staticRows() { return NEW_MODEL_REGION_DEFS.map((def) => ({ regionId: def.displayId, newModelRegionId: def.id, regionName: def.name, value: null })); }
 function renderMap(recordId, rows = [], { unavailable = false } = {}) {
   const byRegion = new Map(rows.map((row) => [row.regionId, row]));
-  return `<div class="v27-body-map regional-v1-map new-model-v1-map" role="group" aria-label="12部位の身体図。各部位を選ぶと、その部位の詳細を開きます。">${VIEWS.map((view) => `<figure class="v27-body-map__view"><figcaption>${view.title}</figcaption><svg viewBox="70 10 160 430" aria-label="${escapeHtml(view.title)}の部位図"><defs><pattern id="new-model-unavailable-${view.key}" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="currentColor" opacity="0.08"></rect><line x1="0" y1="0" x2="0" y2="10" stroke="currentColor" stroke-width="3" opacity="0.24"></line></pattern></defs><g class="body-map__silhouette">${view.silhouette}</g>${view.paths.map(([id, d]) => {
+  return `<div class="v27-body-map regional-v1-map new-model-v1-map" role="group" aria-label="12部位の身体図。色は各部位自身の1 km基準100に対する方向だけを表します。">${VIEWS.map((view) => `<figure class="v27-body-map__view"><figcaption>${view.title}</figcaption><svg viewBox="70 10 160 430" aria-label="${escapeHtml(view.title)}の部位図"><defs><pattern id="new-model-unavailable-${view.key}" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="currentColor" opacity="0.08"></rect><line x1="0" y1="0" x2="0" y2="10" stroke="currentColor" stroke-width="3" opacity="0.24"></line></pattern></defs><g class="body-map__silhouette">${view.silhouette}</g>${view.paths.map(([id, d]) => {
     const row = byRegion.get(id);
     const formal = bodyRegionFormalName(id, row?.regionName || id);
-    const valueText = finite(row?.value) ? `今回の比較値 ${fmt(row.value, 1)}` : "今回の比較値は数値なし";
+    const valueText = finite(row?.value) ? `今回の比較値 ${fmt(row.value, 1)}、${direction(row.value)}` : "今回の比較値は数値なし";
     const label = `${formal}：${valueText}`;
-    const state = unavailable || !finite(row?.value) ? "unavailable" : "available";
+    const state = unavailable ? "unavailable" : directionStateValue(row?.value);
     const style = state === "unavailable" ? ` style="fill:url(#new-model-unavailable-${view.key})"` : "";
     return `<a class="regional-v1-map__link" href="#/body-part-detail?recordId=${encodeURIComponent(recordId)}&regionId=${encodeURIComponent(id)}" aria-label="${escapeHtml(`${label}。詳細を開く`)}"><path class="v27-body-map__region" data-direction="${state}" data-region-id="${id}"${style} d="${d}"><title>${escapeHtml(label)}</title></path></a>`;
   }).join("")}</svg></figure>`).join("")}</div>`;
 }
-function renderCompactList(resultRecord, rows, experiences, showPreviousComparison) {
-  return `<ul class="new-model-v1-compact-list" aria-label="12部位の比較値">${rows.map((row) => {
-    const formal = bodyRegionFormalName(row.regionId, row.regionName);
-    const familiar = bodyRegionFamiliarName(row.regionId, row.regionName);
-    return `<li><a href="#/body-part-detail?recordId=${encodeURIComponent(resultRecord.record_id)}&regionId=${encodeURIComponent(row.regionId)}"><span><strong>${escapeHtml(formal)}</strong>${familiar && familiar !== formal ? `<small>${escapeHtml(familiar)}</small>` : ""}</span><span class="new-model-v1-compact-list__value"><strong>${escapeHtml(fmt(row.value, 1))}</strong>${compactPrevious(resultRecord, experiences, row, showPreviousComparison)}</span></a></li>`;
-  }).join("")}</ul>`;
+function visualPosition(value) {
+  if (!finite(value) || Number(value) <= 0) return 50;
+  return Math.max(4, Math.min(96, 50 + Math.log2(Number(value) / 100) * 20));
 }
-function renderFullList(resultRecord, rows, experiences, showPreviousComparison) {
+function renderList(resultRecord, rows, experiences, showPreviousComparison) {
   return `<ul class="regional-result-grid regional-v1-list">${rows.map((row) => {
     const formal = bodyRegionFormalName(row.regionId, row.regionName);
     const familiar = bodyRegionFamiliarName(row.regionId, row.regionName);
     const optional = optionalLabels(row);
-    return `<li class="regional-result-card" data-direction="available"><a href="#/body-part-detail?recordId=${encodeURIComponent(resultRecord.record_id)}&regionId=${encodeURIComponent(row.regionId)}" aria-label="${escapeHtml(`${formal}の詳細を開く`)}"><span class="regional-result-row__name"><strong>${escapeHtml(formal)}</strong>${familiar && familiar !== formal ? `<small class="body-region-familiar">${escapeHtml(familiar)}</small>` : ""}</span><span class="regional-result-row__value"><strong>${escapeHtml(fmt(row.value, 1))}</strong><small>${escapeHtml(direction(row.value))}</small></span><span class="regional-result-row__direction">1 kmの部位別基準走行を100とする、今回の走行全体の比較値</span>${previousMarkup(resultRecord, experiences, row, showPreviousComparison)}<span class="regional-result-row__chips"><small>${escapeHtml(provenanceLabel(row))}</small>${optional.length ? `<small>${escapeHtml(`${optional.join("・")}の条件を反映`)}</small>` : ""}</span></a></li>`;
+    const state = directionStateValue(row.value);
+    const delta = deltaFromReference(row.value);
+    const value = finite(row.value)
+      ? `<strong><span aria-hidden="true">${directionSymbol(row.value)}</span> ${escapeHtml(fmt(row.value, 1))}</strong><small>${Math.abs(delta) < 0.05 ? "±0" : `${delta > 0 ? "+" : ""}${escapeHtml(fmt(delta, 1))}`}ポイント</small>`
+      : '<span class="regional-result-row__building">数値なし</span>';
+    const meter = finite(row.value)
+      ? `<span class="regional-result-row__scale" aria-label="同じ部位の1 km基準100を中央とする表示位置"><i aria-hidden="true"><em>基準100</em></i><b style="--regional-position:${visualPosition(row.value)}%"></b></span>`
+      : "";
+    return `<li class="regional-result-card" data-direction="${state}"><a href="#/body-part-detail?recordId=${encodeURIComponent(resultRecord.record_id)}&regionId=${encodeURIComponent(row.regionId)}" aria-label="${escapeHtml(`${formal}の詳細を開く`)}"><span class="regional-result-row__name"><strong>${escapeHtml(formal)}</strong>${familiar && familiar !== formal ? `<small class="body-region-familiar">${escapeHtml(familiar)}</small>` : ""}</span><span class="regional-result-row__value">${value}</span>${meter}<span class="regional-result-row__direction">${escapeHtml(direction(row.value))}</span>${previousMarkup(resultRecord, experiences, row, showPreviousComparison)}<span class="regional-result-row__chips"><small>${escapeHtml(provenanceLabel(row))}</small>${optional.length ? `<small>${escapeHtml(`${optional.join("・")}の条件を反映`)}</small>` : ""}</span></a></li>`;
   }).join("")}</ul>`;
+}
+function focusRows(resultRecord, rows, experiences, limit = 4) {
+  // Presentation-only focus. Never rank regions by numeric value or cross-region delta magnitude.
+  const optional = rows.filter((row) => Array.isArray(row.optionalApplied) && row.optionalApplied.length > 0);
+  const changed = rows.filter((row) => {
+    const { previous, delta } = previousInfo(resultRecord, experiences, row);
+    return Boolean(previous) && finite(delta) && Math.abs(Number(delta)) >= 0.05;
+  });
+  const out = [], seen = new Set();
+  for (const group of [optional, changed]) {
+    for (const row of group) {
+      if (seen.has(row.regionId)) continue;
+      seen.add(row.regionId); out.push(row);
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
+}
+function focusReasonText(focused) {
+  if (focused.length) return "「確認点のある部位」は、今回の勾配・歩数ペース・路面を根拠範囲内で追加反映した部位を先に、その後に同じ部位の比較可能な前回記録から表示値が変わった部位を、固定の部位順で4件まで表示します。数値差の大きさでは並べません。";
+  return "今回は、追加反映した任意条件または同じ部位で比較できる前回変化に該当する部位がありません。全12部位で今回の比較値を確認できます。";
 }
 function renderOodCard(resultRecord) {
   const rows = staticRows();
@@ -120,17 +151,28 @@ export function renderNewModelV1Card({ resultRecord, experiences = [], initialVi
   if (resultRecord?.state === "REST") return `<section class="result-card result-card--distribution" data-new-model-v1-card data-information-role="model"><div class="result-card__heading"><div><p>部位別比較値</p><h2>12部位の比較</h2></div>${renderStatusLabel("休養記録", "neutral")}</div><p>休養日には走行の部位別比較値を作成しません。</p></section>`;
   if (resultRecord?.result?.state === "BASELINE_OOD") return renderOodCard(resultRecord);
   const rows = resultRecord?.result?.regions || [];
+  const focused = focusRows(resultRecord, rows, experiences);
   const resolvedView = initialView === "all" ? "all" : "focus";
   const hasFallback = Array.isArray(resultRecord?.result?.fallback) && resultRecord.result.fallback.length > 0;
+  const focusContent = focused.length
+    ? renderList(resultRecord, focused, experiences, showPreviousComparison)
+    : '<p class="regional-focus-empty">今回は「確認点のある部位」に該当する部位がありません。全12部位で今回の比較値を確認できます。</p>';
   return `<section class="result-card result-card--distribution result-card--regional-v27" data-new-model-v1-card data-regional-v1-card data-regional-v1-view="${resolvedView}" data-information-role="model" aria-labelledby="new-model-regional-title">
-    <div class="result-card__heading"><div><p>今回の走行量と条件を含む部位別比較</p><h2 id="new-model-regional-title">12部位の比較値</h2></div>${renderStatusLabel("同じ部位で比較", "model")}</div>
+    <div class="result-card__heading"><div><p>今回の走行量と条件を含む部位別比較</p><h2 id="new-model-regional-title">12部位の比較値</h2></div>${renderStatusLabel("部位ごとの表示", "model")}</div>
     <p class="inline-helper"><strong>100は、その部位自身の1 km基準走行を表す比較用の座標です。</strong> 安全値・正常値・初心者平均・推奨値ではありません。走行距離はこの比較値に含まれます。</p>
-    <p class="inline-helper"><strong>身体図は部位を選ぶための位置表示です。</strong> 部位ごとに基礎となる研究上の指標が異なるため、別部位どうしの数値を順位付けしたり、同じ物理量として比較したりしません。</p>
+    <p class="inline-helper">部位ごとに基礎となる研究上の指標が異なるため、別部位どうしの数値を順位付けしたり、同じ物理量として比較したりしません。</p>
     ${hasFallback ? '<p class="inline-helper"><strong>任意条件の一部は数値化していません。</strong> 情報がない、根拠が十分でない、または対象範囲外の任意条件は「効果0」とせず、その補正を使わず基準計算を維持しています。</p>' : ""}
-    <div class="regional-v1-view-toggle" role="group" aria-label="12部位の表示方法"><button type="button" data-regional-v1-view-button="focus" aria-pressed="${resolvedView === "focus"}">身体図を中心に見る</button><button type="button" data-regional-v1-view-button="all" aria-pressed="${resolvedView === "all"}">12部位一覧で見る</button></div>
-    <div data-regional-v1-panel="focus"${resolvedView === "focus" ? "" : " hidden"}><div class="regional-v1-overview"><div class="regional-v1-overview__map">${renderMap(resultRecord.record_id, rows)}<p class="muted-text">身体図の色は部位の位置を見分けるためのもので、数値の大小・危険度・良し悪しを表しません。各部位を選ぶと詳細を確認できます。</p></div><div class="regional-v1-overview__feedback">${renderCompactList(resultRecord, rows, experiences, showPreviousComparison)}</div></div></div>
-    <div data-regional-v1-panel="all"${resolvedView === "all" ? "" : " hidden"}>${renderFullList(resultRecord, rows, experiences, showPreviousComparison)}</div>
-    <details class="regional-claim-boundary"><summary>この値と過去比較の読み方</summary><div><p>同じ部位・同じ数値定義・同じ基準・同じモデル版の記録どうしで、条件や走行量が変わったときの違いを見ます。</p><p>部位ごとに値が表す研究上の指標が異なるため、異なる部位の数値差を共通の物理量として読みません。</p><p>値の増減は傷害リスク、危険度、改善・悪化、走行可否を意味しません。</p><p>本人が入力した身体記録は、この比較値とは別の情報として保存・表示します。</p></div></details>
+    <div class="regional-v1-view-toggle" role="group" aria-label="表示する部位"><button type="button" data-regional-v1-view-button="focus" aria-pressed="${resolvedView === "focus"}">確認点のある部位</button><button type="button" data-regional-v1-view-button="all" aria-pressed="${resolvedView === "all"}">全12部位</button></div>
+    <p class="muted-text">${escapeHtml(focusReasonText(focused))} 危険度や部位間の負荷順位を示す切替ではありません。</p>
+    <ul class="regional-direction-legend" aria-label="身体図の色と記号"><li data-direction="above"><span aria-hidden="true">↑</span>基準より上</li><li data-direction="reference"><span aria-hidden="true">=</span>基準と同じ</li><li data-direction="below"><span aria-hidden="true">↓</span>基準より下</li><li data-direction="unavailable"><span aria-hidden="true">—</span>表示なし</li></ul>
+    <div class="regional-v1-overview">
+      <div class="regional-v1-overview__map">${renderMap(resultRecord.record_id, rows)}<p class="muted-text">色は各部位自身の1 km基準100に対する方向だけを示します。部位間の数値順位・危険度・良し悪しは表しません。部位を選ぶと詳細を開けます。</p></div>
+      <div class="regional-v1-overview__feedback">
+        <div class="regional-result-list" data-regional-v1-panel="focus"${resolvedView === "focus" ? "" : " hidden"}>${focusContent}</div>
+        <div class="regional-result-list" data-regional-v1-panel="all"${resolvedView === "all" ? "" : " hidden"}>${renderList(resultRecord, rows, experiences, showPreviousComparison)}</div>
+      </div>
+    </div>
+    <details class="regional-claim-boundary"><summary>この値と過去比較の読み方</summary><div><p>同じ部位・同じ数値定義・同じ基準・同じモデル版の記録どうしで、条件や走行量が変わったときの違いを見ます。</p><p>「確認点のある部位」は数値差の大きさで順位付けせず、追加反映した条件と同じ部位の過去比較の有無だけで選びます。</p><p>部位ごとに値が表す研究上の指標が異なるため、異なる部位の数値差を共通の物理量として読みません。</p><p>値の増減は傷害リスク、危険度、改善・悪化、走行可否を意味しません。</p><p>本人が入力した身体記録は、この比較値とは別の情報として保存・表示します。</p></div></details>
   </section>`;
 }
 function sourceLabels(resultRecord, row) { const registry = resultRecord?.source_registry || {}; return (row?.sourceIds || []).map((id) => registry[id]?.label || id); }
