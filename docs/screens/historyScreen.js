@@ -22,10 +22,29 @@ import {
 import { bodyAreaLateralityLabel } from "../core/model/v27/bodyAreaTaxonomy.js";
 import { median, modelTotalValue } from "../ui/resultPresentation.js";
 import { NEW_MODEL_V1_MODEL_VERSION, buildNewModelV1ComparisonSignature, compareNewModelV1Signatures } from "../core/model/newModelV1/newModelV1ResultService.js";
+import { PRIMARY_REGIONAL_V2_MODEL_VERSION, buildPrimaryRegionalV2ComparisonSignature, comparePrimaryRegionalV2Signatures } from "../core/model/nextPrimaryR12Candidate/primaryRegionalV2ResultService.js";
 
 const REGION_BY_ID = new Map(REGIONS.map((region) => [region.id, region]));
 const DEFAULT_REGION_ID = "BA-DISP-019";
 const TOTAL_MINIMUM_PRIOR = 3;
+
+function isReference100ModelVersion(value = "") {
+  return [NEW_MODEL_V1_MODEL_VERSION, PRIMARY_REGIONAL_V2_MODEL_VERSION].includes(String(value || ""));
+}
+
+function reference100DistanceKm(resultRecord = {}, experience = null) {
+  const input = resultRecord?.engine_input_snapshot || {};
+  const runWalk = String(input.runningFormat || experience?.record?.runningFormat || "").toUpperCase() === "RUN_WALK";
+  if (resultRecord?.model_version === PRIMARY_REGIONAL_V2_MODEL_VERSION) {
+    const value = Number(runWalk ? input.runningDistanceKm : input.distanceKm);
+    if (value > 0) return value;
+  }
+  const legacyInputDistance = Number(input.distanceKm);
+  if (legacyInputDistance > 0) return legacyInputDistance;
+  const record = experience?.record || {};
+  const recordDistance = Number(runWalk ? record.runWalkRunningDistanceKm : record.distanceKm);
+  return recordDistance > 0 ? recordDistance : null;
+}
 
 function buildHref(values = {}) {
   const query = new URLSearchParams();
@@ -36,7 +55,7 @@ function buildHref(values = {}) {
 }
 
 function normalizedPeriod(value) {
-  return [7, 28, 90].includes(Number(value)) ? Number(value) : 28;
+  return [7, 28, 90, 180].includes(Number(value)) ? Number(value) : 28;
 }
 
 function normalizedView(value) {
@@ -49,6 +68,10 @@ function normalizedMetric(value) {
 
 function normalizedRegionId(value) {
   return REGION_BY_ID.has(String(value || "")) ? String(value) : DEFAULT_REGION_ID;
+}
+
+function normalizedRegionalDisplay(value) {
+  return String(value || "").toLowerCase() === "value" ? "value" : "ratio";
 }
 
 function finite(value) {
@@ -84,6 +107,7 @@ function buildWorkspace(services, context) {
   const view = normalizedView(context.parameters.get("view"));
   const metric = normalizedMetric(context.parameters.get("metric"));
   const regionId = normalizedRegionId(context.parameters.get("regionId"));
+  const regionalDisplay = normalizedRegionalDisplay(context.parameters.get("display"));
   const requestedRecordId = context.parameters.get("recordId") || "";
   const requestedDate = context.parameters.get("anchorDate") || "";
   const latestDate = allExperiences.at(-1)?.record?.date || localTodayIso();
@@ -109,18 +133,26 @@ function buildWorkspace(services, context) {
   });
 
   const semanticRows = rows.map((item) => {
-    const isNew = item.resultRecord?.model_version === NEW_MODEL_V1_MODEL_VERSION;
-    const semantic = item.row && !isNew
+    const modelVersion = item.resultRecord?.model_version || "";
+    const isNew = modelVersion === NEW_MODEL_V1_MODEL_VERSION;
+    const isPrimary = modelVersion === PRIMARY_REGIONAL_V2_MODEL_VERSION;
+    const isReference100 = isReference100ModelVersion(modelVersion);
+    const semantic = item.row && !isReference100
       ? item.resultRecord?.a7_region_semantics?.[item.row.regionId] || buildA7RegionSemanticDecomposition(item.row)
       : null;
     const ratio = semantic?.regionalConditionResponse?.ratioExact;
-    const conditionIndexExact = isNew
+    const conditionIndexExact = isReference100
       ? (finite(item.row?.value) ? Number(item.row.value) : null)
       : (finite(ratio) && Number(ratio) > 0 ? 100 * Number(ratio) : null);
     const signature = item.row
-      ? (isNew ? buildNewModelV1ComparisonSignature(item.resultRecord, item.row) : buildA7ConditionComparisonSignature(item.resultRecord || item.resultRecord?.result || {}, item.row))
+      ? (isPrimary
+        ? buildPrimaryRegionalV2ComparisonSignature(item.resultRecord, item.row)
+        : (isNew ? buildNewModelV1ComparisonSignature(item.resultRecord, item.row) : buildA7ConditionComparisonSignature(item.resultRecord || item.resultRecord?.result || {}, item.row)))
       : null;
-    return Object.freeze({ ...item, semantic, conditionIndexExact, signature, isNewModelV1: isNew });
+    const distanceKm = isReference100 ? reference100DistanceKm(item.resultRecord, item.experience) : null;
+    const referenceValue = isReference100 && finite(distanceKm) ? 100 * Number(distanceKm) : 100;
+    const referenceDelta = finite(conditionIndexExact) && finite(referenceValue) ? Number(conditionIndexExact) - Number(referenceValue) : null;
+    return Object.freeze({ ...item, semantic, conditionIndexExact, signature, isNewModelV1: isNew, isPrimaryRegionalV2: isPrimary, isReference100, referenceDistanceKm: distanceKm, referenceValue, referenceDelta });
   });
   const requestedAnchor = requestedRecordId
     ? semanticRows.find((item) => item.experience.record.id === requestedRecordId && item.row) || null
@@ -132,13 +164,18 @@ function buildWorkspace(services, context) {
     || null;
   const anchorSignature = anchor?.signature || null;
   const trendRows = semanticRows.map((item) => {
-    const compatibility = anchorSignature && item.signature
-      ? (anchor?.isNewModelV1 && item.isNewModelV1
-        ? compareNewModelV1Signatures(anchorSignature, item.signature)
-        : (!anchor?.isNewModelV1 && !item.isNewModelV1
-          ? compareA7ConditionSignatures(anchorSignature, item.signature)
-          : Object.freeze({ status: "INCOMPATIBLE", differences: Object.freeze(["MODEL_SEMANTIC_GENERATION_MISMATCH"]), directDeltaAllowed: false })))
-      : Object.freeze({ status: "INCOMPATIBLE", differences: Object.freeze(["COMPARISON_SIGNATURE_MISSING"]), directDeltaAllowed: false });
+    let compatibility;
+    if (!anchorSignature || !item.signature) {
+      compatibility = Object.freeze({ status: "INCOMPATIBLE", differences: Object.freeze(["COMPARISON_SIGNATURE_MISSING"]), directDeltaAllowed: false });
+    } else if (anchor?.isPrimaryRegionalV2 && item.isPrimaryRegionalV2) {
+      compatibility = comparePrimaryRegionalV2Signatures(anchorSignature, item.signature);
+    } else if (anchor?.isNewModelV1 && item.isNewModelV1) {
+      compatibility = compareNewModelV1Signatures(anchorSignature, item.signature);
+    } else if (!anchor?.isReference100 && !item.isReference100) {
+      compatibility = compareA7ConditionSignatures(anchorSignature, item.signature);
+    } else {
+      compatibility = Object.freeze({ status: "INCOMPATIBLE", differences: Object.freeze(["MODEL_SEMANTIC_GENERATION_MISMATCH"]), directDeltaAllowed: false });
+    }
     return Object.freeze({ ...item, compatibility });
   });
 
@@ -197,6 +234,7 @@ function buildWorkspace(services, context) {
     metric,
     regionId,
     region: REGION_BY_ID.get(regionId),
+    regionalDisplay,
     requestedRecordId,
     startDate,
     endDate,
@@ -246,7 +284,7 @@ function renderTabs(workspace) {
 
 function renderPeriodTabs(workspace) {
   const shared = sharedParameters(workspace);
-  return `<nav class="period-tabs" aria-label="表示期間">${[7, 28, 90].map((period) => `<a class="period-tab${workspace.period === period ? " is-current" : ""}" href="${escapeHtml(buildHref({ ...shared, view: workspace.view, period }))}"${workspace.period === period ? ' aria-current="page"' : ""}>${period}日</a>`).join("")}</nav>`;
+  return `<nav class="period-tabs" aria-label="表示期間">${[7, 28, 90, 180].map((period) => `<a class="period-tab${workspace.period === period ? " is-current" : ""}" href="${escapeHtml(buildHref({ ...shared, view: workspace.view, period }))}"${workspace.period === period ? ' aria-current="page"' : ""}>${period}日</a>`).join("")}</nav>`;
 }
 
 function renderGuide() {
@@ -302,7 +340,7 @@ function renderRecordList(workspace, context) {
   return `<div class="history-list history-list--facts">${items.map((item) => {
     const record = item.experience.record;
     const hasRegional = Boolean(item.resultRecord);
-    return `<article class="history-item history-fact-item"><div class="history-item__date"><time datetime="${escapeHtml(record.date)}">${escapeHtml(formatLocalDate(record.date))}</time>${renderStatusLabel(record.activityType === "rest" ? "休養" : "走行", record.activityType === "rest" ? "neutral" : "info")}</div><div class="history-item__body"><h2>${escapeHtml(formatActivitySummary(record))}</h2><p>${escapeHtml(record.course?.name || "コース名なし")}</p>${record.memo ? `<p class="history-item__memo">${escapeHtml(record.memo)}</p>` : ""}<div class="history-fact-item__labels">${hasRegional ? renderStatusLabel("部位結果あり", "model") : renderStatusLabel("部位結果なし", "neutral")}${item.note ? renderStatusLabel("ノートあり", "info") : ""}</div></div><div class="history-item__actions"><a class="button button--secondary" href="#/result?recordId=${encodeURIComponent(record.id)}">結果を見る</a>${item.note ? `<a class="button button--text" href="#/notebook?view=day&date=${encodeURIComponent(item.note.date)}">ノートを開く</a>` : `<a class="button button--text" href="#/notebook?view=day&date=${encodeURIComponent(record.date)}&source=result&recordId=${encodeURIComponent(record.id)}">ノートに残す</a>`}<a class="button button--text" href="#/record-input?recordId=${encodeURIComponent(record.id)}">編集</a><button class="button button--text" type="button" data-action="delete-history-record" data-record-id="${escapeHtml(record.id)}" data-record-label="${escapeHtml(`${formatLocalDate(record.date)}の記録`)}">削除</button></div></article>`;
+    return `<article class="history-item history-fact-item"><div class="history-item__date"><time class="history-date${weekendClass(record.date)}" datetime="${escapeHtml(record.date)}">${escapeHtml(formatLocalDate(record.date))}</time>${renderStatusLabel(record.activityType === "rest" ? "休養" : "走行", record.activityType === "rest" ? "neutral" : "info")}</div><div class="history-item__body"><h2>${escapeHtml(formatActivitySummary(record))}</h2><p>${escapeHtml(record.course?.name || "コース名なし")}</p>${record.memo ? `<p class="history-item__memo">${escapeHtml(record.memo)}</p>` : ""}<div class="history-fact-item__labels">${hasRegional ? renderStatusLabel("部位結果あり", "model") : renderStatusLabel("部位結果なし", "neutral")}${item.note ? renderStatusLabel("ノートあり", "info") : ""}</div></div><div class="history-item__actions"><a class="button button--secondary" href="#/result?recordId=${encodeURIComponent(record.id)}">結果を見る</a>${item.note ? `<a class="button button--text" href="#/notebook?view=day&date=${encodeURIComponent(item.note.date)}">ノートを開く</a>` : `<a class="button button--text" href="#/notebook?view=day&date=${encodeURIComponent(record.date)}&source=result&recordId=${encodeURIComponent(record.id)}">ノートに残す</a>`}<a class="button button--text" href="#/record-input?recordId=${encodeURIComponent(record.id)}">編集</a><button class="button button--text" type="button" data-action="delete-history-record" data-record-id="${escapeHtml(record.id)}" data-record-label="${escapeHtml(`${formatLocalDate(record.date)}の記録`)}">削除</button></div></article>`;
   }).join("")}</div>`;
 }
 
@@ -311,9 +349,11 @@ function renderRecordView(workspace, context) {
 }
 
 function chartGeometry(items) {
-  const values = items.map((item) => Number(item.conditionIndexExact));
-  const rawMin = Math.min(100, ...values);
-  const rawMax = Math.max(100, ...values);
+  const reference100 = Boolean(items[0]?.isReference100);
+  const values = items.flatMap((item) => [Number(item.conditionIndexExact), ...(reference100 && finite(item.referenceValue) ? [Number(item.referenceValue)] : [])]).filter(Number.isFinite);
+  if (!reference100) values.push(100);
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
   const padding = Math.max(2, (rawMax - rawMin) * 0.16);
   const minValue = rawMin - padding;
   const maxValue = rawMax + padding;
@@ -324,30 +364,208 @@ function chartGeometry(items) {
       ...item,
       x: items.length === 1 ? 54 : 12 + (index * 82) / (items.length - 1),
       y: projectY(item.conditionIndexExact),
+      referenceY: reference100 && finite(item.referenceValue) ? projectY(item.referenceValue) : null,
     }))),
-    referenceY: projectY(100),
+    referenceY: reference100 ? null : projectY(100),
     minValue,
     maxValue,
+    reference100,
   });
 }
 
 function chartLabelIndices(length) {
-  if (length <= 7) return new Set(Array.from({ length }, (_, index) => index));
-  const step = Math.ceil((length - 1) / 5);
+  if (length <= 8) return new Set(Array.from({ length }, (_, index) => index));
+  const step = Math.ceil((length - 1) / 6);
   const indices = new Set([0, length - 1]);
   for (let index = step; index < length - 1; index += step) indices.add(index);
   return indices;
 }
 
-function renderTrendChart(items, regionName) {
-  const isNew = Boolean(items[0]?.isNewModelV1);
-  const valueLabel = isNew ? "部位別比較値" : "条件応答";
+function referenceRatioPercent(item) {
+  const value = Number(item?.conditionIndexExact);
+  const reference = Number(item?.referenceValue);
+  if (!Number.isFinite(value) || !Number.isFinite(reference) || reference <= 0) return null;
+  return (value / reference) * 100;
+}
+
+function referenceRatioGeometry(items) {
+  const ratios = items.map(referenceRatioPercent).filter(Number.isFinite);
+  const maxDeviation = ratios.length ? Math.max(...ratios.map((value) => Math.abs(value - 100))) : 0;
+  const halfRange = Math.max(10, Math.ceil((maxDeviation + 3) / 5) * 5);
+  const minValue = Math.max(0, 100 - halfRange);
+  const maxValue = 100 + halfRange;
+  const span = Math.max(1, maxValue - minValue);
+  const plotTop = 8;
+  const plotBottom = 43;
+  const projectY = (value) => plotBottom - ((Number(value) - minValue) / span) * (plotBottom - plotTop);
+  const ticks = [];
+  for (let value = Math.ceil(minValue / 5) * 5; value <= maxValue; value += 5) {
+    ticks.push(Object.freeze({ value, y: projectY(value) }));
+  }
+  return Object.freeze({
+    points: Object.freeze(items.map((item, index) => Object.freeze({
+      ...item,
+      ratioPercent: referenceRatioPercent(item),
+      x: items.length === 1 ? 54 : 11 + (index * 84) / (items.length - 1),
+      y: projectY(referenceRatioPercent(item)),
+    }))),
+    referenceY: projectY(100),
+    minValue,
+    maxValue,
+    ticks: Object.freeze(ticks),
+  });
+}
+
+function shortDateLabel(value = "") {
+  const parts = String(value || "").split("-");
+  if (parts.length !== 3) return String(value || "");
+  return `${Number(parts[1])}/${Number(parts[2])}`;
+}
+
+function weekdayLabel(value = "") {
+  const date = new Date(`${String(value || "")}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return "";
+  return ["日", "月", "火", "水", "木", "金", "土"][date.getUTCDay()] || "";
+}
+
+function weekendClass(value = "") {
+  const weekday = weekdayLabel(value);
+  if (weekday === "土") return " date-weekend--sat";
+  if (weekday === "日") return " date-weekend--sun";
+  return "";
+}
+
+function trendDirectionLabel(delta) {
+  if (!Number.isFinite(Number(delta)) || Math.abs(Number(delta)) < 0.5) return Object.freeze({ arrow: "—", label: "基準と同程度", className: "is-near" });
+  return Number(delta) > 0
+    ? Object.freeze({ arrow: "↑", label: "基準より上", className: "is-above" })
+    : Object.freeze({ arrow: "↓", label: "基準より下", className: "is-below" });
+}
+
+function trendSelectionHref(workspace, item) {
+  return buildHref({
+    view: "trends",
+    metric: "region",
+    period: workspace.period,
+    anchorDate: workspace.endDate,
+    regionId: workspace.regionId,
+    display: workspace.regionalDisplay,
+    recordId: item.experience.record.id,
+  });
+}
+
+function renderReferenceRatioTrendChart(items, regionName, workspace) {
+  if (!items.length) return '<p class="muted-text">比較できる記録が不足しています。</p>';
+  const geometry = referenceRatioGeometry(items);
+  const polyline = geometry.points.map((point) => `${point.x},${point.y}`).join(" ");
+  const labelIndices = chartLabelIndices(geometry.points.length);
+  const selectedId = workspace.anchor?.experience?.record?.id || items.at(-1)?.experience?.record?.id || "";
+  const gridLines = geometry.ticks.map((tick) => `<line x1="7" y1="${tick.y}" x2="97" y2="${tick.y}" class="regional-history-chart__grid${tick.value === 100 ? " is-reference" : ""}"></line><text x="5.6" y="${tick.y + 0.75}" text-anchor="end" class="regional-history-chart__tick-label${tick.value === 100 ? " is-reference" : ""}">${escapeHtml(formatNumber(tick.value, 0))}%</text>`).join("");
+  const valueLabels = geometry.points.map((point, index) => labelIndices.has(index)
+    ? `<text x="${point.x}" y="${Math.max(6.4, point.y - 2.6)}" text-anchor="middle" class="regional-history-chart__value-label">${escapeHtml(formatNumber(point.ratioPercent, 0))}%</text>`
+    : "").join("");
+  const dateLabels = geometry.points.map((point, index) => {
+    if (!labelIndices.has(index)) return "";
+    const isCurrent = point.experience.record.id === selectedId;
+    const weekday = weekdayLabel(point.experience.record.date);
+    return `<text x="${point.x}" y="48.7" text-anchor="middle" class="regional-history-chart__date-label${weekendClass(point.experience.record.date)}${isCurrent ? " is-current" : ""}"><tspan x="${point.x}" dy="0">${escapeHtml(shortDateLabel(point.experience.record.date))}</tspan><tspan x="${point.x}" dy="2.7">(${escapeHtml(weekday)})</tspan></text>`;
+  }).join("");
+  const hiddenReferences = geometry.points.map((point) => `<span>${escapeHtml(formatNumber(point.referenceValue, 0))}</span>`).join("");
+  const pointLinks = geometry.points.map((point) => {
+    const selected = point.experience.record.id === selectedId;
+    const delta = Number(point.ratioPercent) - 100;
+    const halo = selected ? `<circle cx="${point.x}" cy="${point.y}" r="1.9" class="regional-history-chart__point-halo"></circle>` : "";
+    return `<a href="${escapeHtml(trendSelectionHref(workspace, point))}" aria-label="${escapeHtml(`${formatLocalDate(point.experience.record.date)}、同距離基準との比率${formatNumber(point.ratioPercent, 0)}%、基準との差${delta >= 0 ? "+" : ""}${formatNumber(delta, 0)}%`)}">${halo}<circle cx="${point.x}" cy="${point.y}" r="${selected ? 1.2 : 0.82}" class="regional-history-chart__point${selected ? " is-current" : ""}"><title>${escapeHtml(`${formatLocalDate(point.experience.record.date)} ${formatNumber(point.ratioPercent, 0)}%`)}</title></circle></a>`;
+  }).join("");
+  return `<figure class="regional-history-chart regional-history-chart--ratio" data-regional-history="true"><div class="regional-history-chart__meaning"><strong>同距離基準を100%とした比率の推移</strong><span>基準線：同距離基準 100%（各記録の距離に対応）</span></div><svg viewBox="0 0 100 56" role="img" aria-label="${escapeHtml(regionName)}の同距離基準を100%とした比率の推移">${gridLines}<g class="regional-history-chart__zone"><rect x="8.1" y="9.2" width="13.8" height="4.2" rx="1.3"></rect><text x="15" y="12" text-anchor="middle">基準より上</text></g><g class="regional-history-chart__zone"><rect x="8.1" y="38.4" width="13.8" height="4.2" rx="1.3"></rect><text x="15" y="41.2" text-anchor="middle">基準より下</text></g>${geometry.points.length > 1 ? `<polyline points="${polyline}" class="regional-history-chart__line"></polyline>` : ""}${valueLabels}${pointLinks}${dateLabels}</svg><figcaption class="regional-history-chart__axis regional-history-chart__axis--ratio"><span>古い記録</span><strong>横軸：記録日</strong><span>新しい記録</span></figcaption><div class="visually-hidden">同距離基準との差${hiddenReferences}</div></figure>`;
+}
+
+function referenceValueGeometry(items) {
+  const values = items.flatMap((item) => [Number(item.conditionIndexExact), Number(item.referenceValue)]).filter(Number.isFinite);
+  if (!values.length) return null;
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const rawSpan = Math.max(1, rawMax - rawMin);
+  const targetStep = rawSpan / 5;
+  const magnitude = 10 ** Math.floor(Math.log10(Math.max(targetStep, 1e-9)));
+  const normalized = targetStep / magnitude;
+  const stepBase = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  const step = stepBase * magnitude;
+  const minValue = Math.floor((rawMin - step * .55) / step) * step;
+  const maxValue = Math.ceil((rawMax + step * .55) / step) * step;
+  const plotTop = 8;
+  const plotBottom = 43;
+  const span = Math.max(step, maxValue - minValue);
+  const projectY = (value) => plotBottom - ((Number(value) - minValue) / span) * (plotBottom - plotTop);
+  const ticks = [];
+  for (let value = minValue; value <= maxValue + step * .01; value += step) ticks.push(Object.freeze({ value, y: projectY(value) }));
+  return Object.freeze({
+    points: Object.freeze(items.map((item, index) => Object.freeze({
+      ...item,
+      x: items.length === 1 ? 54 : 11 + (index * 84) / (items.length - 1),
+      y: projectY(item.conditionIndexExact),
+      referenceY: finite(item.referenceValue) ? projectY(item.referenceValue) : null,
+    }))),
+    ticks: Object.freeze(ticks),
+    minValue,
+    maxValue,
+  });
+}
+
+function renderRegionalDisplayToggle(workspace) {
+  const shared = {
+    view: "trends",
+    metric: "region",
+    period: workspace.period,
+    anchorDate: workspace.endDate,
+    regionId: workspace.regionId,
+    recordId: workspace.anchor?.experience?.record?.id || workspace.requestedRecordId,
+  };
+  const option = (value, label) => `<a class="${workspace.regionalDisplay === value ? "is-current" : ""}" href="${escapeHtml(buildHref({ ...shared, display: value }))}"${workspace.regionalDisplay === value ? ' aria-current="page"' : ""}>${escapeHtml(label)}</a>`;
+  return `<nav class="history-chart-display-toggle" aria-label="グラフの表示"><span>グラフ表示</span><div>${option("ratio", "基準との比率")}${option("value", "比較値")}</div></nav>`;
+}
+
+function renderReferenceValueTrendChart(items, regionName, workspace) {
+  if (!items.length) return '<p class="muted-text">比較できる記録が不足しています。</p>';
+  const geometry = referenceValueGeometry(items);
+  if (!geometry) return '<p class="muted-text">比較値を表示できません。</p>';
+  const selectedId = workspace.anchor?.experience?.record?.id || items.at(-1)?.experience?.record?.id || "";
+  const labelIndices = chartLabelIndices(geometry.points.length);
+  const polyline = geometry.points.map((point) => `${point.x},${point.y}`).join(" ");
+  const gridLines = geometry.ticks.map((tick) => `<line x1="7" y1="${tick.y}" x2="97" y2="${tick.y}" class="regional-history-chart__grid"></line><text x="5.6" y="${tick.y + .75}" text-anchor="end" class="regional-history-chart__tick-label">${escapeHtml(formatNumber(tick.value, Math.abs(tick.value) < 10 ? 1 : 0))}</text>`).join("");
+  const valueLabels = geometry.points.map((point, index) => labelIndices.has(index)
+    ? `<text x="${point.x}" y="${Math.max(6.4, point.y - 2.6)}" text-anchor="middle" class="regional-history-chart__value-label">${escapeHtml(formatNumber(point.conditionIndexExact, 1))}</text>`
+    : "").join("");
+  const dateLabels = geometry.points.map((point, index) => {
+    if (!labelIndices.has(index)) return "";
+    const current = point.experience.record.id === selectedId;
+    const weekday = weekdayLabel(point.experience.record.date);
+    return `<text x="${point.x}" y="48.7" text-anchor="middle" class="regional-history-chart__date-label${weekendClass(point.experience.record.date)}${current ? " is-current" : ""}"><tspan x="${point.x}" dy="0">${escapeHtml(shortDateLabel(point.experience.record.date))}</tspan><tspan x="${point.x}" dy="2.7">(${escapeHtml(weekday)})</tspan></text>`;
+  }).join("");
+  const referenceMarks = geometry.points.map((point) => point.referenceY == null ? "" : `<line x1="${Math.max(7.5, point.x - 1.35)}" y1="${point.referenceY}" x2="${Math.min(97, point.x + 1.35)}" y2="${point.referenceY}" class="regional-history-chart__reference-mark"><title>${escapeHtml(`同距離基準 ${formatNumber(point.referenceValue, 1)}`)}</title></line>`).join("");
+  const pointLinks = geometry.points.map((point) => {
+    const selected = point.experience.record.id === selectedId;
+    const delta = Number(point.conditionIndexExact) - Number(point.referenceValue);
+    const halo = selected ? `<circle cx="${point.x}" cy="${point.y}" r="1.9" class="regional-history-chart__point-halo"></circle>` : "";
+    return `<a href="${escapeHtml(trendSelectionHref(workspace, point))}" aria-label="${escapeHtml(`${formatLocalDate(point.experience.record.date)}、比較値${formatNumber(point.conditionIndexExact, 1)}、同距離基準との差${delta >= 0 ? "+" : ""}${formatNumber(delta, 1)}`)}">${halo}<circle cx="${point.x}" cy="${point.y}" r="${selected ? 1.2 : .82}" class="regional-history-chart__point${selected ? " is-current" : ""}"><title>${escapeHtml(`${formatLocalDate(point.experience.record.date)} 比較値${formatNumber(point.conditionIndexExact, 1)}`)}</title></circle></a>`;
+  }).join("");
+  return `<figure class="regional-history-chart regional-history-chart--ratio regional-history-chart--value" data-regional-history="true"><div class="regional-history-chart__meaning"><strong>${escapeHtml(regionName)}の比較値の推移</strong><span>短線：各記録の同距離基準</span></div><svg viewBox="0 0 100 56" role="img" aria-label="${escapeHtml(regionName)}の比較値の推移">${gridLines}${referenceMarks}${geometry.points.length > 1 ? `<polyline points="${polyline}" class="regional-history-chart__line"></polyline>` : ""}${valueLabels}${pointLinks}${dateLabels}</svg><figcaption class="regional-history-chart__axis regional-history-chart__axis--ratio"><span>古い記録</span><strong>横軸：記録日　／　縦軸：${escapeHtml(regionName)}の比較値</strong><span>新しい記録</span></figcaption></figure>`;
+}
+
+function renderTrendChart(items, regionName, workspace) {
+  const reference100 = Boolean(items[0]?.isReference100);
+  if (reference100) return workspace.regionalDisplay === "value"
+    ? renderReferenceValueTrendChart(items, regionName, workspace)
+    : renderReferenceRatioTrendChart(items, regionName, workspace);
+  const valueLabel = "条件応答";
   if (!items.length) return `<p class="muted-text">同じ部位・同じ数値定義・同じ基準で比べられる${valueLabel}の記録が不足しています。</p>`;
   const geometry = chartGeometry(items);
   const polyline = geometry.points.map((point) => `${point.x},${point.y}`).join(" ");
   const labelIndices = chartLabelIndices(geometry.points.length);
   const valueLabels = geometry.points.map((point, index) => labelIndices.has(index) ? `<text x="${point.x}" y="${Math.max(7, point.y - 4)}" text-anchor="middle" class="regional-history-chart__value-label">${escapeHtml(formatNumber(point.conditionIndexExact, 1))}</text>` : "").join("");
-  return `<figure class="regional-history-chart" data-regional-history="true"><svg viewBox="0 0 100 56" role="img" aria-label="${escapeHtml(regionName)}の比較可能な${valueLabel}の推移"><text x="1.5" y="8" class="regional-history-chart__scale-label">${escapeHtml(formatNumber(geometry.maxValue, 0))}</text><text x="1.5" y="47" class="regional-history-chart__scale-label">${escapeHtml(formatNumber(geometry.minValue, 0))}</text><line x1="10" y1="${geometry.referenceY}" x2="96" y2="${geometry.referenceY}" class="regional-history-chart__reference"></line><text x="95" y="${Math.max(6, geometry.referenceY - 1.5)}" text-anchor="end" class="regional-history-chart__reference-label">基準100</text>${geometry.points.length > 1 ? `<polyline points="${polyline}" class="regional-history-chart__line"></polyline>` : ""}${valueLabels}${geometry.points.map((point) => `<a href="#/result?recordId=${encodeURIComponent(point.experience.record.id)}"><circle cx="${point.x}" cy="${point.y}" r="2.8" class="regional-history-chart__point"><title>${escapeHtml(`${formatLocalDate(point.experience.record.date)} ${valueLabel}${formatNumber(point.conditionIndexExact, 1)}、基準100との差${Number(point.conditionIndexExact) >= 100 ? "+" : ""}${formatNumber(Number(point.conditionIndexExact) - 100, 1)}`)}</title></circle></a>`).join("")}</svg><figcaption class="regional-history-chart__axis"><span>${escapeHtml(formatLocalDate(items[0].experience.record.date))}</span><strong>同じ数値定義を持つ記録だけを順につないでいます</strong><span>${escapeHtml(formatLocalDate(items.at(-1).experience.record.date))}</span></figcaption></figure>`;
+  const fixedReference = `<line x1="10" y1="${geometry.referenceY}" x2="96" y2="${geometry.referenceY}" class="regional-history-chart__reference"></line><text x="95" y="${Math.max(6, geometry.referenceY - 1.5)}" text-anchor="end" class="regional-history-chart__reference-label">基準100</text>`;
+  const pointTitles = geometry.points.map((point) => `<a href="#/result?recordId=${encodeURIComponent(point.experience.record.id)}"><circle cx="${point.x}" cy="${point.y}" r="2.8" class="regional-history-chart__point"><title>${escapeHtml(`${formatLocalDate(point.experience.record.date)} ${valueLabel}${formatNumber(point.conditionIndexExact, 1)}、基準100との差${Number(point.conditionIndexExact) >= 100 ? "+" : ""}${formatNumber(Number(point.conditionIndexExact) - 100, 1)}`)}</title></circle></a>`).join("");
+  return `<figure class="regional-history-chart" data-regional-history="true"><svg viewBox="0 0 100 56" role="img" aria-label="${escapeHtml(regionName)}の比較可能な${valueLabel}の推移"><text x="1.5" y="8" class="regional-history-chart__scale-label">${escapeHtml(formatNumber(geometry.maxValue, 0))}</text><text x="1.5" y="47" class="regional-history-chart__scale-label">${escapeHtml(formatNumber(geometry.minValue, 0))}</text>${fixedReference}${geometry.points.length > 1 ? `<polyline points="${polyline}" class="regional-history-chart__line"></polyline>` : ""}${valueLabels}${pointTitles}</svg><figcaption class="regional-history-chart__axis"><span>${escapeHtml(formatLocalDate(items[0].experience.record.date))}</span><strong>同じ数値定義を持つ記録だけを順につないでいます</strong><span>${escapeHtml(formatLocalDate(items.at(-1).experience.record.date))}</span></figcaption></figure>`;
 }
 
 function routeFamilyLabel(signature = null) {
@@ -357,14 +575,130 @@ function routeFamilyLabel(signature = null) {
   return "同じ比較指標";
 }
 
-function renderTrendTable(items) {
-  const isNew = Boolean(items[0]?.isNewModelV1);
-  const valueLabel = isNew ? "部位別比較値" : "条件応答";
-  return `<div class="regional-trend-table"><table><thead><tr><th scope="col">日付</th><th scope="col">${valueLabel}</th><th scope="col">基準100との差</th><th scope="col">根拠の範囲</th></tr></thead><tbody>${items.map((item) => `<tr><th scope="row"><a href="#/result?recordId=${encodeURIComponent(item.experience.record.id)}">${escapeHtml(formatLocalDate(item.experience.record.date))}</a></th><td>${formatNumber(item.conditionIndexExact, 1)}</td><td>${Number(item.conditionIndexExact) >= 100 ? "+" : ""}${formatNumber(Number(item.conditionIndexExact) - 100, 1)}</td><td>${escapeHtml(routeFamilyLabel(item.signature))}</td></tr>`).join("")}</tbody></table></div>`;
+function formatPacePerKm(record = {}) {
+  const distance = Number(record.distanceKm);
+  const duration = Number(record.durationMinutes);
+  if (!(distance > 0) || !(duration > 0)) return "—";
+  const seconds = Math.round((duration * 60) / distance);
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes}:${String(remainder).padStart(2, "0")} /km`;
+}
+
+function signedGradeFromRecord(record = {}) {
+  const course = record.course || {};
+  if (String(course.gradeKnowledge || "").toUpperCase() === "KNOWN_FLAT") return 0;
+  const sections = Array.isArray(course.sections) ? course.sections : [];
+  if (sections.length) {
+    let weighted = 0;
+    let weightSum = 0;
+    sections.forEach((section) => {
+      const share = finite(section.sharePercent) ? Number(section.sharePercent) : (finite(section.distanceKm) ? Number(section.distanceKm) : null);
+      const raw = finite(section.gradePercent) ? Number(section.gradePercent) : null;
+      if (!(share > 0) || raw === null) return;
+      const direction = String(section.gradeDirection || "").toUpperCase();
+      const signed = direction === "DOWNHILL" ? -Math.abs(raw) : direction === "UPHILL" ? Math.abs(raw) : raw;
+      weighted += signed * share;
+      weightSum += share;
+    });
+    if (weightSum > 0) return weighted / weightSum;
+  }
+  if (finite(course.upPercent) || finite(course.downPercent)) {
+    const upShare = finite(course.upPercent) ? Number(course.upPercent) : 0;
+    const downShare = finite(course.downPercent) ? Number(course.downPercent) : 0;
+    const upGrade = finite(course.upGradePercent) ? Math.abs(Number(course.upGradePercent)) : 0;
+    const downGrade = finite(course.downGradePercent) ? Math.abs(Number(course.downGradePercent)) : 0;
+    const denominator = upShare + downShare;
+    if (denominator > 0) return ((upShare * upGrade) - (downShare * downGrade)) / denominator;
+  }
+  const raw = finite(course.gradePercent) ? Number(course.gradePercent) : null;
+  if (raw !== null) {
+    const direction = String(course.gradeDirection || "").toUpperCase();
+    return direction === "DOWNHILL" ? -Math.abs(raw) : direction === "UPHILL" ? Math.abs(raw) : raw;
+  }
+  return null;
+}
+
+function formatAverageGrade(record = {}) {
+  const grade = signedGradeFromRecord(record);
+  if (!Number.isFinite(grade)) return "—";
+  if (Math.abs(grade) < 0.05) return "0.0%";
+  return `${grade > 0 ? "+" : ""}${formatNumber(grade, 1)}%`;
+}
+
+function primarySurfaceLabel(record = {}) {
+  const course = record.course || {};
+  const candidates = [
+    ["pavedPercent", "舗装路"],
+    ["trackPercent", "トラック"],
+    ["treadmillPercent", "トレッドミル"],
+    ["soilPercent", "土"],
+    ["trailPercent", "トレイル"],
+    ["naturalGrassPercent", "天然芝"],
+    ["artificialTurfPercent", "人工芝"],
+    ["sandPercent", "砂"],
+  ].map(([key, label]) => ({ label, value: finite(course[key]) ? Number(course[key]) : 0 }));
+  const best = candidates.sort((a, b) => b.value - a.value)[0];
+  return best?.value > 0 ? best.label : (course.name || "—");
+}
+
+function formatDuration(record = {}) {
+  const minutes = Number(record.durationMinutes);
+  if (!(minutes > 0)) return "—";
+  const totalSeconds = Math.round(minutes * 60);
+  const mm = Math.floor(totalSeconds / 60);
+  const ss = totalSeconds % 60;
+  return `${mm}:${String(ss).padStart(2, "0")}`;
+}
+
+function previousComparableItem(items, selected) {
+  if (!selected) return null;
+  const sorted = [...items].sort((left, right) => recordChronology(left.experience, right.experience));
+  const index = sorted.findIndex((item) => item.experience.record.id === selected.experience.record.id);
+  return index > 0 ? sorted[index - 1] : null;
+}
+
+function conditionDifferenceRows(selected, previous) {
+  if (!selected || !previous) return [];
+  const currentRecord = selected.experience.record;
+  const previousRecord = previous.experience.record;
+  return [
+    ["平均ペース", formatPacePerKm(previousRecord), formatPacePerKm(currentRecord)],
+    ["平均勾配", formatAverageGrade(previousRecord), formatAverageGrade(currentRecord)],
+    ["主な路面", primarySurfaceLabel(previousRecord), primarySurfaceLabel(currentRecord)],
+  ];
+}
+
+function renderSelectedTrendRecord(selected, previous, regionName) {
+  if (!selected) return "";
+  const ratio = referenceRatioPercent(selected);
+  const delta = Number(ratio) - 100;
+  const direction = trendDirectionLabel(delta);
+  const rows = conditionDifferenceRows(selected, previous);
+  return `<section class="history-selected-record" aria-labelledby="history-selected-record-title"><p class="history-panel-label">選択中の記録</p><h3 id="history-selected-record-title" class="history-selected-record__date${weekendClass(selected.experience.record.date)}">${escapeHtml(formatLocalDate(selected.experience.record.date))}</h3><div class="history-selected-record__hero"><div class="history-selected-record__ratio"><strong>${escapeHtml(formatNumber(ratio, 0))}%</strong><span>同距離基準との比率</span></div><div class="history-selected-record__delta ${escapeHtml(direction.className)}"><span>基準との差</span><strong>${delta >= 0 ? "+" : ""}${escapeHtml(formatNumber(delta, 0))}%</strong><small>${escapeHtml(direction.arrow)} ${escapeHtml(direction.label)}</small></div></div><dl class="history-selected-record__facts"><div><dt>実際の比較値</dt><dd>${escapeHtml(formatNumber(selected.conditionIndexExact, 1))}</dd></div><div><dt>距離</dt><dd>${escapeHtml(formatNumber(selected.referenceDistanceKm, 2))} km</dd></div></dl>${previous ? `<div class="history-condition-differences"><h4>前回記録（${escapeHtml(shortDateLabel(previous.experience.record.date))}）との主な条件の違い</h4><table><tbody>${rows.map(([label, before, current]) => `<tr><th scope="row">${escapeHtml(label)}</th><td>${escapeHtml(before)}</td><td class="history-condition-differences__arrow">→</td><td>${escapeHtml(current)}</td></tr>`).join("")}</tbody></table></div>` : '<p class="muted-text">この期間内に前回の比較可能記録はありません。</p>'}<a class="button button--secondary history-selected-record__detail" href="#/result?recordId=${encodeURIComponent(selected.experience.record.id)}">この記録の詳細を見る</a></section>`;
+}
+
+function renderComparisonConditions() {
+  return `<section class="history-comparison-conditions" id="history-comparison-conditions" aria-labelledby="history-comparison-conditions-title"><h3 id="history-comparison-conditions-title">比較条件 <span>（この画面に表示している記録の条件）</span></h3><ul><li>同じ部位の記録</li><li>同じ意味の比較値</li><li>距離に応じた基準で比較</li><li>同じ計算方法で保存された記録</li></ul><details class="history-comparison-conditions__detail"><summary>条件の詳細を表示</summary><p>部位別比較値では、走行距離はこの比較値に含まれています。同じ数値定義・同じ基準・同じ計算方法で比較できる記録のみ表示します。100は安全値・正常値・初心者平均ではありません。100%は各記録の同距離基準との比率です。</p></details></section>`;
+}
+
+function renderReflectionActions(selected) {
+  if (!selected) return "";
+  const record = selected.experience.record;
+  return `<section class="history-reflection-card" aria-labelledby="history-reflection-title"><p class="history-panel-label">記録を振り返る</p><h3 id="history-reflection-title">今回の変化で確認したい点を記録できます。</h3><div class="history-reflection-card__actions"><a class="button button--secondary" href="#/notebook?view=day&date=${encodeURIComponent(record.date)}&source=result&recordId=${encodeURIComponent(record.id)}">メモを残す</a><a class="button button--text" href="#/plan?sourceRecordId=${encodeURIComponent(record.id)}">次回確認したい条件</a></div></section>`;
+}
+
+function renderTrendTable(items, selectedId = "", workspace = null) {
+  const reference100 = Boolean(items[0]?.isReference100);
+  if (!reference100) {
+    const valueLabel = "条件応答";
+    return `<div class="regional-trend-table"><table><thead><tr><th scope="col">日付</th><th scope="col">${valueLabel}</th><th scope="col">基準100</th><th scope="col">基準100との差</th><th scope="col">根拠の範囲</th></tr></thead><tbody>${items.map((item) => { const delta = Number(item.conditionIndexExact) - 100; return `<tr><th scope="row"><a href="#/result?recordId=${encodeURIComponent(item.experience.record.id)}">${escapeHtml(formatLocalDate(item.experience.record.date))}</a></th><td>${formatNumber(item.conditionIndexExact, 1)}</td><td>100</td><td>${delta >= 0 ? "+" : ""}${formatNumber(delta, 1)}</td><td>${escapeHtml(routeFamilyLabel(item.signature))}</td></tr>`; }).join("")}</tbody></table></div>`;
+  }
+  return `<div class="regional-trend-table regional-trend-table--reference"><table><thead><tr><th scope="col" aria-label="番号"></th><th scope="col">記録日</th><th scope="col">距離</th><th scope="col">時間</th><th scope="col">平均ペース</th><th scope="col">平均勾配</th><th scope="col">路面</th><th scope="col">比較値</th><th scope="col">基準との比率</th><th scope="col">基準との差</th></tr></thead><tbody>${items.map((item, index) => { const ratio = referenceRatioPercent(item); const delta = Number(ratio) - 100; const record = item.experience.record; const selected = record.id === selectedId; const direction = trendDirectionLabel(delta); return `<tr${selected ? ' class="is-selected"' : ""}><td class="history-table-index"><span>${index + 1}</span></td><th scope="row"><a class="history-table-date${weekendClass(record.date)}" href="${escapeHtml(trendSelectionHref(workspace, item))}">${escapeHtml(shortDateLabel(record.date))} (${escapeHtml(weekdayLabel(record.date))})</a></th><td>${escapeHtml(formatNumber(item.referenceDistanceKm, 2))} km</td><td>${escapeHtml(formatDuration(record))}</td><td>${escapeHtml(formatPacePerKm(record))}</td><td>${escapeHtml(formatAverageGrade(record))}</td><td>${escapeHtml(primarySurfaceLabel(record))}</td><td>${escapeHtml(formatNumber(item.conditionIndexExact, 1))}</td><td><strong>${escapeHtml(formatNumber(ratio, 0))}%</strong></td><td class="history-table-delta ${escapeHtml(direction.className)}">${delta >= 0 ? "+" : ""}${escapeHtml(formatNumber(delta, 0))}% ${escapeHtml(direction.arrow)}</td></tr>`; }).join("")}</tbody></table></div>`;
 }
 
 function renderRegionSelector(workspace) {
-  return `<form id="regional-history-form" class="history-body-part-selector"><input type="hidden" name="view" value="trends"><input type="hidden" name="metric" value="region"><input type="hidden" name="period" value="${workspace.period}"><input type="hidden" name="anchorDate" value="${escapeHtml(workspace.endDate)}"><label class="field"><span>推移を見る部位</span><select name="regionId">${REGIONS.map((region) => `<option value="${escapeHtml(region.id)}"${workspace.regionId === region.id ? " selected" : ""}>${escapeHtml(bodyRegionFormalName(region.id, region.name))}</option>`).join("")}</select></label><button class="button button--secondary" type="submit">部位を変更</button></form>`;
+  return `<form id="regional-history-form" class="history-body-part-selector"><input type="hidden" name="view" value="trends"><input type="hidden" name="metric" value="region"><input type="hidden" name="period" value="${workspace.period}"><input type="hidden" name="anchorDate" value="${escapeHtml(workspace.endDate)}"><input type="hidden" name="display" value="${escapeHtml(workspace.regionalDisplay)}"><label class="field"><span>推移を見る部位</span><select name="regionId">${REGIONS.map((region) => `<option value="${escapeHtml(region.id)}"${workspace.regionId === region.id ? " selected" : ""}>${escapeHtml(bodyRegionFormalName(region.id, region.name))}</option>`).join("")}</select></label><button class="button button--secondary" type="submit">部位を変更</button></form>`;
 }
 
 function renderPlanSummary(workspace) {
@@ -448,18 +782,38 @@ function renderSubjectiveTrendView(workspace) {
   if (!workspace.selectedSubjective) {
     return `<section class="history-trends-view"><section class="history-role-boundary" data-information-role="personal" aria-labelledby="history-subjective-role-title"><p>本人が残した記録</p><h2 id="history-subjective-role-title">この期間に部位の身体記録はありません</h2><p>本人が部位と程度を入力すると、ここに日付順で表示します。</p></section></section>`;
   }
-  return `<section class="history-trends-view"><section class="history-role-boundary" data-information-role="personal" aria-labelledby="history-subjective-role-title"><p>本人が残した記録</p><h2 id="history-subjective-role-title">同じ部位の入力を日付順に確認する</h2><p>入力値をそのまま並べます。線で傾向を作らず、改善・悪化・危険度を自動判定しません。</p></section>${renderSubjectiveSelector(workspace)}<section class="result-card result-card--subjective" data-information-role="personal" aria-labelledby="subjective-trend-title"><div class="result-card__heading"><div><p>本人入力の履歴</p><h2 id="subjective-trend-title">${escapeHtml(workspace.selectedSubjective.label)}・${escapeHtml(bodyAreaLateralityLabel(workspace.selectedSubjective.laterality))}</h2></div>${renderStatusLabel(`${workspace.subjectiveRows.length}件`, "info")}</div>${workspace.subjectiveRows.length ? `<ol class="history-subjective-timeline">${workspace.subjectiveRows.map((item) => `<li><time datetime="${escapeHtml(item.experience.record.date)}">${escapeHtml(formatLocalDate(item.experience.record.date))}</time><span><em>本人入力</em><strong>程度 ${escapeHtml(formatNumber(item.observation.intensity, 0))} / 5</strong></span><span><em>記録条件</em><strong>${escapeHtml(formatActivitySummary(item.experience.record))}</strong></span><a class="button button--text" href="#/result?recordId=${encodeURIComponent(item.experience.record.id)}">結果を開く</a></li>`).join("")}</ol>` : '<p class="muted-text">選択した部位の記録はありません。</p>'}<details class="history-reading-disclosure"><summary>本人入力の読み方</summary><div><p>同じ数値でも、その日の本人の判断基準や状況は異なる可能性があります。数値だけで身体状態を判断しません。</p></div></details></section></section>`;
+  return `<section class="history-trends-view"><section class="history-role-boundary" data-information-role="personal" aria-labelledby="history-subjective-role-title"><p>本人が残した記録</p><h2 id="history-subjective-role-title">同じ部位の入力を日付順に確認する</h2><p>入力値をそのまま並べます。線で傾向を作らず、改善・悪化・危険度を自動判定しません。</p></section>${renderSubjectiveSelector(workspace)}<section class="result-card result-card--subjective" data-information-role="personal" aria-labelledby="subjective-trend-title"><div class="result-card__heading"><div><p>本人入力の履歴</p><h2 id="subjective-trend-title">${escapeHtml(workspace.selectedSubjective.label)}・${escapeHtml(bodyAreaLateralityLabel(workspace.selectedSubjective.laterality))}</h2></div>${renderStatusLabel(`${workspace.subjectiveRows.length}件`, "info")}</div>${workspace.subjectiveRows.length ? `<ol class="history-subjective-timeline">${workspace.subjectiveRows.map((item) => `<li><time class="history-date${weekendClass(item.experience.record.date)}" datetime="${escapeHtml(item.experience.record.date)}">${escapeHtml(formatLocalDate(item.experience.record.date))}</time><span><em>本人入力</em><strong>程度 ${escapeHtml(formatNumber(item.observation.intensity, 0))} / 5</strong></span><span><em>記録条件</em><strong>${escapeHtml(formatActivitySummary(item.experience.record))}</strong></span><a class="button button--text" href="#/result?recordId=${encodeURIComponent(item.experience.record.id)}">結果を開く</a></li>`).join("")}</ol>` : '<p class="muted-text">選択した部位の記録はありません。</p>'}<details class="history-reading-disclosure"><summary>本人入力の読み方</summary><div><p>同じ数値でも、その日の本人の判断基準や状況は異なる可能性があります。数値だけで身体状態を判断しません。</p></div></details></section></section>`;
+}
+
+function renderFocusedPeriodTabs(workspace) {
+  return `<div class="history-focused-period"><strong>期間</strong><nav aria-label="表示期間">${[7, 28, 90, 180].map((period) => `<a class="${workspace.period === period ? "is-current" : ""}" href="${escapeHtml(buildHref({ view: "trends", metric: "region", period, anchorDate: workspace.endDate, regionId: workspace.regionId, display: workspace.regionalDisplay }))}"${workspace.period === period ? ' aria-current="page"' : ""}>${period}日</a>`).join("")}</nav></div>`;
+}
+
+function renderFocusedRegionPicker(workspace) {
+  return `<details class="history-focused-region-picker"><summary>部位を変更</summary><form id="regional-history-form"><input type="hidden" name="view" value="trends"><input type="hidden" name="metric" value="region"><input type="hidden" name="period" value="${workspace.period}"><input type="hidden" name="anchorDate" value="${escapeHtml(workspace.endDate)}"><label class="field"><span>表示する部位</span><select name="regionId">${REGIONS.map((region) => `<option value="${escapeHtml(region.id)}"${workspace.regionId === region.id ? " selected" : ""}>${escapeHtml(bodyRegionFormalName(region.id, region.name))}</option>`).join("")}</select></label><button class="button button--primary" type="submit">表示する</button></form></details>`;
+}
+
+function renderFocusedHistoryHeader(workspace, regionName, count) {
+  return `<header class="history-focused-header"><a class="history-focused-back" href="${escapeHtml(buildHref({ view: "records", period: workspace.period, anchorDate: workspace.endDate, regionId: workspace.regionId }))}">← 戻る</a><div><h1>${escapeHtml(regionName)}の推移</h1><p>比較できる記録のみ表示します</p></div>${renderFocusedRegionPicker(workspace)}</header><div class="history-focused-toolbar">${renderFocusedPeriodTabs(workspace)}<div class="history-focused-count"><strong>比較できる記録</strong><span>${count}件</span></div><a class="history-focused-conditions-link" href="#history-comparison-conditions">ⓘ 条件の詳細</a></div>`;
 }
 
 function renderRegionTrendView(workspace) {
   const directItems = workspace.trendRows.filter((item) => item.compatibility.directDeltaAllowed && finite(item.conditionIndexExact)).sort((left, right) => recordChronology(left.experience, right.experience));
   const otherItems = workspace.trendRows.filter((item) => item.row && !item.compatibility.directDeltaAllowed).sort((left, right) => recordChronology(right.experience, left.experience));
-  const isNew = Boolean(workspace.anchor?.isNewModelV1);
+  const isNew = Boolean(workspace.anchor?.isReference100);
   const anchorConditionAvailable = Boolean(workspace.anchorSignature && finite(workspace.anchor?.conditionIndexExact));
-  const title = isNew ? "同じ部位・同じ数値定義の記録だけで推移を見る" : "同じ条件応答として比較できる記録だけで推移を見る";
-  const meaning = isNew ? "走行距離を含む部位別比較値" : bodyRegionPlainMeaning(workspace.region.id);
-  const distanceNote = isNew ? "走行距離はこの比較値に含まれています。" : "共通走行量は別の情報で、このグラフの縦軸へ足しません。";
-  return `<section class="history-trends-view"><section class="history-role-boundary" data-information-role="model" aria-labelledby="history-trend-role-title"><p>${isNew?"部位別比較値":"部位ごとの条件応答"}</p><h2 id="history-trend-role-title">${escapeHtml(title)}</h2><p>同じ部位・同じ数値定義・同じ基準・同じ保存時モデルで比べられる記録だけをつなぎます。異なる数値定義の記録は線でつなぎません。</p></section>${renderRegionSelector(workspace)}${!anchorConditionAvailable&&workspace.requestedRecordId?'<section class="result-card"><h2>この記録では数値推移を作りません</h2><p>同じ意味で比較できる部位別数値がありません。100を代入して補いません。</p></section>':""}<section class="result-card" data-information-role="model"><div class="result-card__heading"><div><p>同じ意味で比べられる記録</p><h2>${escapeHtml(bodyRegionFormalName(workspace.region.id, workspace.region.name))}の推移</h2></div>${renderStatusLabel(`グラフに使用 ${directItems.length}件`, "model")}</div><p class="inline-helper"><strong>この値が表すこと：</strong>${escapeHtml(meaning)}</p><details class="history-reading-disclosure"><summary>このグラフの読み方</summary><div><p><strong>${escapeHtml(distanceNote)}</strong></p><p>100は安全値・正常値・初心者平均ではありません。増減を改善・悪化・危険度とは評価しません。</p></div></details>${renderTrendChart(directItems, bodyRegionFormalName(workspace.region.id, workspace.region.name))}${directItems.length?renderTrendTable(directItems):""}</section>${otherItems.length?`<details class="history-detail-disclosure"><summary>同じ意味では比べられない記録 ${otherItems.length}件</summary><p>保存された記録は削除していません。数値定義または保存時の計算方法が一致しないため、グラフから分けています。</p></details>`:""}${renderPlanSummary(workspace)}</section>`;
+  const regionName = bodyRegionFormalName(workspace.region.id, workspace.region.name);
+  const selected = directItems.find((item) => item.experience.record.id === workspace.anchor?.experience?.record?.id) || directItems.at(-1) || null;
+  const previous = previousComparableItem(directItems, selected);
+
+  if (isNew) {
+    return `<section class="history-trends-view history-trends-view--regional history-focused-analysis">${renderFocusedHistoryHeader(workspace, regionName, directItems.length)}${!anchorConditionAvailable&&workspace.requestedRecordId?'<section class="result-card"><h2>この記録では数値推移を作りません</h2><p>同じ意味で比較できる部位別数値がありません。</p></section>':""}<div class="history-focused-grid"><section class="history-focused-chart-card" aria-labelledby="history-ratio-title"><h2 id="history-ratio-title" class="visually-hidden">${escapeHtml(regionName)}の推移グラフ</h2>${renderRegionalDisplayToggle(workspace)}${renderTrendChart(directItems, regionName, workspace)}</section>${renderSelectedTrendRecord(selected, previous, regionName)}${directItems.length ? `<details class="history-record-table-disclosure" open><summary>記録一覧（${directItems.length}件）</summary>${renderTrendTable(directItems, selected?.experience?.record?.id || "", workspace)}<a class="history-record-table-disclosure__all" href="${escapeHtml(buildHref({ view: "records", period: workspace.period, anchorDate: workspace.endDate, regionId: workspace.regionId }))}">すべての記録を確認する</a></details>` : ""}<aside class="history-focused-side-lower">${renderComparisonConditions()}${renderReflectionActions(selected)}</aside></div><p class="history-focused-footnote">※ 比率は「各記録の同距離基準を100%とした値」です。上がる・下がるが良い・悪いを示すものではありません。</p>${otherItems.length?`<details class="history-detail-disclosure"><summary>比較対象から外れた記録 ${otherItems.length}件</summary><p>保存記録は残したまま、同じ意味では比較できない記録をグラフから分けています。</p></details>`:""}</section>`;
+  }
+
+  const title = "同じ条件応答として比較できる記録だけで推移を見る";
+  const meaning = bodyRegionPlainMeaning(workspace.region.id);
+  const distanceNote = "共通走行量は別の情報で、このグラフの縦軸へ足しません。";
+  return `<section class="history-trends-view"><section class="history-role-boundary" data-information-role="model" aria-labelledby="history-trend-role-title"><p>部位ごとの条件応答</p><h2 id="history-trend-role-title">${escapeHtml(title)}</h2><p>同じ部位・同じ数値定義・同じ基準・同じ保存時モデルで比べられる記録だけをつなぎます。異なる数値定義の記録は線でつなぎません。</p></section>${renderRegionSelector(workspace)}${!anchorConditionAvailable&&workspace.requestedRecordId?'<section class="result-card"><h2>この記録では数値推移を作りません</h2><p>同じ意味で比較できる部位別数値がありません。100を代入して補いません。</p></section>':""}<section class="result-card" data-information-role="model"><div class="result-card__heading"><div><p>同じ意味で比べられる記録</p><h2>${escapeHtml(regionName)}の推移</h2></div>${renderStatusLabel(`グラフに使用 ${directItems.length}件`, "model")}</div><p class="inline-helper"><strong>この値が表すこと：</strong>${escapeHtml(meaning)}</p><details class="history-reading-disclosure"><summary>このグラフの読み方</summary><div><p><strong>${escapeHtml(distanceNote)}</strong></p><p>増減を改善・悪化・危険度とは評価しません。</p></div></details>${renderTrendChart(directItems, regionName, workspace)}${directItems.length?renderTrendTable(directItems, selected?.experience?.record?.id || "", workspace):""}</section>${otherItems.length?`<details class="history-detail-disclosure"><summary>同じ意味では比べられない記録 ${otherItems.length}件</summary><p>保存された記録は削除していません。数値定義または保存時の計算方法が一致しないため、グラフから分けています。</p></details>`:""}${renderPlanSummary(workspace)}</section>`;
 }
 
 function renderTrendView(workspace) {
@@ -475,6 +829,10 @@ export function renderHistoryScreen({ services, context }) {
   const workspace = buildWorkspace(services, context);
   if (!workspace) {
     return `<section class="screen screen--history">${renderPageHeading({ eyebrow: "保存した記録", title: "履歴", description: "保存した記録と比較可能な推移を見返します。" })}${renderEmptyState({ title: "保存済みの記録がありません", description: "最初の走行または休養を保存してください。", actionLabel: "記録を始める", actionScreen: "record-input" })}</section>`;
+  }
+  const focusedRegional = workspace.view === "trends" && workspace.metric === "region" && Boolean(workspace.anchor?.isReference100);
+  if (focusedRegional) {
+    return `<section class="screen screen--history-comparison-focused">${renderRegionTrendView(workspace)}${services.workflows.history.loadUndoEntry() ? '<div class="history-undo" role="status"><p>直前に削除した記録を元に戻せます。</p><button class="button button--secondary" type="button" data-action="undo-history-delete">削除を元に戻す</button></div>' : ""}</section>`;
   }
   return `<section class="screen screen--history-unified">${renderPageHeading({ eyebrow: "保存した記録", title: "記録と推移を見返す", description: `${formatLocalDate(workspace.startDate)}〜${formatLocalDate(workspace.endDate)}。数値結果と本人入力を役割ごとに分けます。記録ノートは本人が選んで残した言葉です。` })}${renderRecordsWorkspaceNavigation({ active: "history", date: workspace.endDate })}${renderGuide()}${renderTabs(workspace)}${renderPeriodTabs(workspace)}${workspace.view === "trends" ? renderTrendView(workspace) : renderRecordView(workspace, context)}${services.workflows.history.loadUndoEntry() ? '<div class="history-undo" role="status"><p>直前に削除した記録を元に戻せます。</p><button class="button button--secondary" type="button" data-action="undo-history-delete">削除を元に戻す</button></div>' : ""}</section>`;
 }

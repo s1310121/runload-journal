@@ -34,6 +34,8 @@
   --color-on-accent: #ffffff;
   --color-on-ink: #ffffff;
   /* Semantic colors are meaning-bearing and remain stable across accent themes. */
+  --color-weekend-saturday: #245fa8;
+  --color-weekend-sunday: #b23a3a;
   --color-info: #315d7a;
   --color-info-soft: #e8f0f5;
   --color-neutral-soft: #eceae4;
@@ -181,6 +183,8 @@ html.rl-appearance-dark {
   --color-danger-border: #d28a73;
   --color-danger-soft: #3f241e;
   --color-danger-line: #7c4a3d;
+  --color-weekend-saturday: #8fc4ff;
+  --color-weekend-sunday: #ff9b93;
   --color-surface-warm: #211d17;
   --color-surface-warm-strong: #2b251e;
   --color-map-silhouette: #26302b;
@@ -285,6 +289,8 @@ html.rl-appearance-dark.rl-color-orange {
     --color-danger-border: #d28a73;
     --color-danger-soft: #3f241e;
     --color-danger-line: #7c4a3d;
+  --color-weekend-saturday: #8fc4ff;
+  --color-weekend-sunday: #ff9b93;
     --color-surface-warm: #211d17;
     --color-surface-warm-strong: #2b251e;
     --color-map-silhouette: #26302b;

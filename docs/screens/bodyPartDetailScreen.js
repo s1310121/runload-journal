@@ -30,6 +30,7 @@ import {
 import { renderResultWorkspaceNavigation } from "../ui/screenArchitecture.js";
 import { renderNewModelV1Detail } from "../ui/newModelV1Presentation.js";
 import { NEW_MODEL_V1_MODEL_VERSION } from "../core/model/newModelV1/newModelV1ResultService.js";
+import { PRIMARY_REGIONAL_V2_MODEL_VERSION } from "../core/model/nextPrimaryR12Candidate/primaryRegionalV2ResultService.js";
 import {
   bodyRegionDisplayName,
   bodyRegionFormalName,
@@ -249,7 +250,7 @@ function renderUnavailableSavedDetail(experience, bodyPart) {
   const regionId = SAVED_BODY_TO_REGION[bodyPart] || "";
   return `<section class="screen screen--body-part-detail">
     ${renderPageHeading({ eyebrow: "結果の詳細", title: `${display}の保存記録`, description: `${formatLocalDate(experience.record.date)}に保存された内容です。` })}
-    ${renderResultWorkspaceNavigation({ recordId: experience.record.id, date: experience.record.date, active: "region" })}
+    ${renderResultWorkspaceNavigation({ recordId: experience.record.id, date: experience.record.date, regionId, active: "region" })}
     <section class="result-card"><div class="result-card__heading"><div><p>保存された記録</p><h2>この記録では部位の比較値を表示できません</h2></div>${renderStatusLabel("保存内容は確認できます", "neutral")}</div><p>現在の部位別表示に必要な条件がそろっていないため、別の記録との数値比較は行いません。</p>${regionId ? renderSubjective(experience.feedback || {}, regionId) : ""}</section>
     <div class="screen-actions"><a class="button button--primary" href="#/result?recordId=${encodeURIComponent(experience.record.id)}">今回の結果へ戻る</a></div>
   </section>`;
@@ -434,7 +435,7 @@ export function renderBodyPartDetailScreen({ services, context }) {
   const recordId = String(context.parameters.get("recordId") || "");
   const regionId = String(context.parameters.get("regionId") || "");
   const experience = services.workflows.records.loadExperience(recordId);
-  if (experience?.regionalV1ResultRecord?.model_version === NEW_MODEL_V1_MODEL_VERSION) {
+  if ([NEW_MODEL_V1_MODEL_VERSION, PRIMARY_REGIONAL_V2_MODEL_VERSION].includes(experience?.regionalV1ResultRecord?.model_version)) {
     const experiences = services.workflows.records.loadAllExperiences();
     const rendered = renderNewModelV1Detail({ experience, regionId, experiences });
     if (rendered) return rendered;
@@ -448,7 +449,7 @@ export function renderBodyPartDetailScreen({ services, context }) {
   }
   return `<section class="screen screen--body-part-detail">
     ${renderPageHeading({ eyebrow: "結果の詳細", title: "部位の条件応答", description: `${formatLocalDate(experience.record.date)}の保存記録です。` })}
-    ${renderResultWorkspaceNavigation({ recordId: experience.record.id, date: experience.record.date, active: "region" })}
+    ${renderResultWorkspaceNavigation({ recordId: experience.record.id, date: experience.record.date, regionId, active: "region" })}
     <section class="result-card"><div class="result-card__heading"><div><p>保存された記録</p><h2>この記録では12部位の条件応答を表示できません</h2></div>${renderStatusLabel("数値なし", "neutral")}</div><p>現在の条件応答の意味で保存された部位結果がないため、別の部位表示へ置き換えず、100も代入しません。</p><p class="source-boundary">走行全体の比較用推定値、本人の身体記録、共通走行量を部位条件応答として読み替えません。</p></section>
     <div class="screen-actions"><a class="button button--primary" href="#/result?recordId=${encodeURIComponent(experience.record.id)}">今回の結果へ戻る</a></div>
   </section>`;

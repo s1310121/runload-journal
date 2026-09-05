@@ -21,10 +21,19 @@ import { renderV27TotalCard } from "../ui/v27ResultPresentation.js";
 import { renderRegionalV1Card } from "../ui/regionalV1Presentation.js";
 import { renderNewModelV1Card } from "../ui/newModelV1Presentation.js";
 import { NEW_MODEL_V1_MODEL_VERSION } from "../core/model/newModelV1/newModelV1ResultService.js";
+import { PRIMARY_REGIONAL_V2_MODEL_VERSION } from "../core/model/nextPrimaryR12Candidate/primaryRegionalV2ResultService.js";
 import { renderResultWorkspaceNavigation } from "../ui/screenArchitecture.js";
 import { buildA7ConditionPreviousComparableMap } from "../core/model/regionalV1/regionalV1ResultService.js";
 import { reportedRpeValue } from "../core/safety/rpeProvenance.js";
 import { bodyAreaLateralityLabel } from "../core/model/v27/bodyAreaTaxonomy.js";
+
+function isReference100ModelVersion(value = "") {
+  return [NEW_MODEL_V1_MODEL_VERSION, PRIMARY_REGIONAL_V2_MODEL_VERSION].includes(String(value || ""));
+}
+
+function isPrimaryRegionalV2Result(resultRecord = null) {
+  return resultRecord?.model_version === PRIMARY_REGIONAL_V2_MODEL_VERSION;
+}
 
 function runningFormatLabel(value) {
   return {
@@ -52,12 +61,17 @@ function regionalModelSpeedMps(record = {}) {
 }
 
 function renderModelFamilyBoundary(record = {}, regionalV1ResultRecord = null) {
-  if (regionalV1ResultRecord?.model_version === NEW_MODEL_V1_MODEL_VERSION) {
+  if (isReference100ModelVersion(regionalV1ResultRecord?.model_version)) {
     const notes = [];
-    if (String(record.runningFormat || "UNKNOWN").toUpperCase() === "RUN_WALK") notes.push("RUN_WALKでは、走った区間の距離と時間だけを12部位の比較値に使います。歩いた区間は0として扱うのではなく、この走行モデルの対象外です。");
-    const speed = regionalModelSpeedMps(record);
-    if (Number.isFinite(speed) && (speed < 2.25 || speed > 3.33)) notes.push(`現在の12部位モデルの速度範囲は2.25〜3.33 m/sです。今回の対象速度は${speed.toFixed(2)} m/sのため、部位別数値は外挿しません。`);
-    return `<aside class="safety-notice model-family-boundary" aria-label="表示の読み方"><p><strong>12部位の比較値には、今回走った距離と速度条件が含まれます。</strong> 100は各部位自身の基準走行を表す比較用座標で、安全・正常・平均・推奨を意味しません。別部位どうしの数値を順位付けしません。</p>${notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</aside>`;
+    if (String(record.runningFormat || "UNKNOWN").toUpperCase() === "RUN_WALK") notes.push("RUN_WALKでは、走った区間の距離と時間だけを12部位の比較値に使います。歩いた区間を0として足すのではなく、この走行モデルの対象外として分けます。");
+    if (isPrimaryRegionalV2Result(regionalV1ResultRecord)) {
+      notes.push("数値化できる条件範囲は部位・根拠ごとに異なります。原典の範囲内、限定的な転用、暫定的な推定、根拠不足を区別し、根拠のない条件を効果なしとして補いません。");
+      if (regionalV1ResultRecord?.result?.combinedConditionState === "AXES_PRESERVED_NOT_COMBINED") notes.push("複数の条件軸がある場合でも、組み合わせの根拠がない効果を一つの係数へ掛け合わせません。個別の推定として分けて表示します。");
+    } else {
+      const speed = regionalModelSpeedMps(record);
+      if (Number.isFinite(speed) && (speed < 2.25 || speed > 3.33)) notes.push(`この保存時モデルの速度範囲は2.25〜3.33 m/sです。今回の対象速度は${speed.toFixed(2)} m/sのため、部位別数値は外挿しません。`);
+    }
+    return `<aside class="safety-notice model-family-boundary" aria-label="表示の読み方"><p><strong>12部位の比較値には、今回走った距離と数値化できる走行条件が含まれます。</strong> 100は各部位自身の1 km基準走行を表す比較用座標で、安全・正常・平均・推奨を意味しません。別部位どうしの数値を順位付けしません。</p>${notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</aside>`;
   }
   const integration = regionalV1ResultRecord?.result?.a9Integration || {};
   const notes = [];
@@ -233,7 +247,7 @@ function renderResultActivationHub(experience, observationCandidate = null) {
   return `<section class="result-activation-hub" aria-labelledby="result-activation-title"><div class="section-heading section-heading--compact"><p>この結果を次に活かす</p><h2 id="result-activation-title">次にすることを自分で選ぶ</h2><p>理解・共有・次回の観察・予定をこの場所から選びます。アプリは走行可否や練習の正解を決めません。</p></div>${observationPrompt}<div class="result-activation-hub__grid">${links.map((item) => `<a class="result-activation-hub__item" href="${escapeHtml(item.href)}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.description)}</small><span aria-hidden="true">→</span></a>`).join("")}</div></section>`;
 }
 
-function renderResultGuide({ newModelRecord = false } = {}) {
+function renderResultGuide({ newModelRecord = false, primaryRegionalV2 = false } = {}) {
   if (newModelRecord) {
     return renderScreenGuide({
       id: "result-guide",
@@ -241,7 +255,7 @@ function renderResultGuide({ newModelRecord = false } = {}) {
       sections: [
         { title: "まずここでやること", body: "今回の記録、12部位の比較値、走行全体の過去記録との比較を順に見返します。" },
         { title: "12部位の比較値", body: "身体図と部位カードで確認します。「今回注目する部位」と「全12部位」を切り替えられます。「今回注目する部位」は、同じ距離の基準または比較可能な前回の同じ部位に対して表示上1%以上上向いた部位を先に示します。1%は情報量を絞るUI上の基準で、危険度や医学的な閾値ではありません。部位間の数値差の大きさでは並べません。" },
-        { title: "範囲外の扱い", body: "現在の12部位モデルの範囲外では外挿せず、部位別数値を表示しません。分からない任意条件も効果なしとは扱いません。" },
+        { title: "根拠の範囲", body: primaryRegionalV2 ? "部位や条件ごとに根拠の範囲が異なります。原典の数値範囲内、限定条件での転用、暫定的な推定、数値化できる根拠不足を区別します。複数条件も、組み合わせの根拠がなければ一つの係数へ掛け合わせません。" : "この保存時12部位モデルの範囲外では外挿せず、部位別数値を表示しません。分からない任意条件も効果なしとは扱いません。" },
         { title: "走行全体の比較用推定値", body: "別のモデルによる参考値として、同じ意味で比べられる過去記録と見返します。12部位の比較値とは同じ尺度ではありません。" },
       ],
       tutorialId: "result",
@@ -291,7 +305,8 @@ export function renderResultScreen({ services, context }) {
   const settings = normalizeJournalSettings(services.storage.settings.load());
   const recordCard = renderRecordFactsCard(record);
   const personalContextCard = renderPersonalContext(record);
-  const newModelRecord = regionalV1ResultRecord?.model_version === NEW_MODEL_V1_MODEL_VERSION;
+  const newModelRecord = isReference100ModelVersion(regionalV1ResultRecord?.model_version);
+  const primaryRegionalV2 = isPrimaryRegionalV2Result(regionalV1ResultRecord);
   const subjectiveCard = renderSubjectiveFeedback(feedback || {}, record, allExperiences, { newModelRecord });
   const totalCard = v27ResultRecord
     ? renderV27TotalCard({ resultRecord: v27ResultRecord, comparison })
@@ -336,6 +351,6 @@ export function renderResultScreen({ services, context }) {
     ${orderedResultSections(settings.resultDisplayMode, fragments)}
     ${renderSubjectiveFollowUpAction(experience)}
     ${renderResultActivationHub(experience, observationContext.observationCandidate)}
-    ${renderResultGuide({ newModelRecord })}
+    ${renderResultGuide({ newModelRecord, primaryRegionalV2 })}
   </section>`;
 }

@@ -5,11 +5,8 @@ import { renderResultWorkspaceNavigation } from "./screenArchitecture.js";
 import { bodyAreaLateralityLabel } from "../core/model/v27/bodyAreaTaxonomy.js";
 import { BODY_AREA_TO_REGIONAL_V1 } from "../core/model/regionalV1/regionalV1InputAdapter.js";
 import { NEW_MODEL_REGION_DEFS } from "../core/model/newModelV1/newModelV1Engine.js";
-import {
-  NEW_MODEL_V1_MODEL_VERSION,
-  buildNewModelV1ComparisonSignature,
-  compareNewModelV1Signatures,
-} from "../core/model/newModelV1/newModelV1ResultService.js";
+import { NEW_MODEL_V1_MODEL_VERSION } from "../core/model/newModelV1/newModelV1ResultService.js";
+import { PRIMARY_REGIONAL_V2_MODEL_VERSION } from "../core/model/nextPrimaryR12Candidate/primaryRegionalV2ResultService.js";
 
 const FRONT = '<circle cx="150" cy="36" r="20"></circle><path d="M110 78 C120 66 135 60 150 60 C165 60 180 66 190 78 L204 126 C208 138 204 150 196 160 L182 176 L188 212 C192 228 190 246 184 262 L172 308 C168 324 166 340 166 356 L166 400 C166 410 158 418 148 418 C138 418 130 410 130 400 L130 356 C130 340 128 324 124 308 L112 262 C106 246 104 228 108 212 L114 176 L100 160 C92 150 88 138 92 126 Z"></path>';
 const BACK = '<circle cx="150" cy="36" r="20"></circle><path d="M112 76 C122 66 136 60 150 60 C164 60 178 66 188 76 L202 124 C206 136 202 150 194 160 L182 174 L188 212 C192 228 190 244 184 262 L172 310 C168 326 166 342 166 358 L166 402 C166 412 158 420 148 420 C138 420 130 412 130 402 L130 358 C130 342 128 326 124 310 L112 262 C106 244 104 228 108 212 L114 174 L102 160 C94 150 90 136 94 124 Z"></path>';
@@ -42,7 +39,9 @@ function displaySalienceThreshold(referenceValue) {
   return finite(referenceValue) ? Math.max(0.05, Math.abs(Number(referenceValue)) * DISPLAY_SALIENCE_RELATIVE) : 0.05;
 }
 function modelDistanceKm(resultRecord = {}) {
-  const distance = Number(resultRecord?.engine_input_snapshot?.distanceKm);
+  const input = resultRecord?.engine_input_snapshot || {};
+  const runWalk = String(input.runningFormat || "").toUpperCase() === "RUN_WALK";
+  const distance = Number(runWalk ? input.runningDistanceKm : input.distanceKm);
   return Number.isFinite(distance) && distance > 0 ? distance : null;
 }
 function sameDistanceReferenceValue(resultRecord = {}) {
@@ -79,12 +78,19 @@ function compactSameDistanceDirection(resultRecord, value) {
   return `同距離基準${fmt(referenceValue, 1)}比 ${delta > 0 ? "+" : ""}${fmt(delta, 1)}ポイント`;
 }
 function provenanceLabel(row = {}) {
-  const value = String(row.provenance || "");
+  const value = String(row.evidenceState || row.provenance || "");
+  if (value === "DIRECT_KNOT" || value === "SOURCE_DEFINED_MODEL" || value === "SOURCE_BOUNDED_INTERPOLATION") return "原典の数値範囲内";
+  if (value === "BOUNDED_TRANSFER") return "限定条件で文献を転用";
+  if (value.startsWith("PROVISIONAL_")) return "暫定的な推定";
+  if (value === "EVIDENCE_INSUFFICIENT") return "数値化できる根拠が不足";
   if (value.includes("BOUNDED_PROVISIONAL")) return "限定範囲の推定";
   if (value.includes("EVIDENCE_SUPPORTED_SURFACE")) return "文献で複数条件を扱える範囲";
   if (value.includes("DIRECT_POINT")) return "文献の測定条件に対応";
   return "文献条件内・区間内";
 }
+function reference100Model(resultRecord={}) { return [NEW_MODEL_V1_MODEL_VERSION, PRIMARY_REGIONAL_V2_MODEL_VERSION].includes(String(resultRecord?.model_version || "")); }
+function signatureFor(resultRecord={}, regionId="") { return resultRecord?.comparison_signatures?.[regionId] || null; }
+function compareReference100Signatures(a,b){ const same=Boolean(a&&b&&a.modelVersion===b.modelVersion&&a.outputSemanticVersion===b.outputSemanticVersion&&a.regionId===b.regionId&&a.constructId===b.constructId&&a.referenceId===b.referenceId); return {directDeltaAllowed:same}; }
 function optionalLabels(row = {}) {
   const text = JSON.stringify(row.optionalApplied || []).toLowerCase();
   const labels = [];
@@ -94,14 +100,14 @@ function optionalLabels(row = {}) {
   return labels;
 }
 function comparableHistory({ resultRecord, experiences = [], regionId }) {
-  const signature = buildNewModelV1ComparisonSignature(resultRecord, regionId);
+  const signature = signatureFor(resultRecord, regionId);
   if (!signature) return [];
   const currentExperience = experiences.find((item) => item.regionalV1ResultRecord?.id === resultRecord.id);
   const currentDate = String(currentExperience?.record?.date || "");
   return experiences
-    .filter((item) => item.regionalV1ResultRecord?.model_version === NEW_MODEL_V1_MODEL_VERSION && item.regionalV1ResultRecord?.id !== resultRecord.id && (!currentDate || String(item.record?.date || "") < currentDate))
-    .map((item) => ({ experience: item, row: item.regionalV1Result?.regions?.find((candidate) => candidate.regionId === regionId), signature: buildNewModelV1ComparisonSignature(item.regionalV1ResultRecord, regionId) }))
-    .filter((item) => item.row && compareNewModelV1Signatures(signature, item.signature).directDeltaAllowed)
+    .filter((item) => reference100Model(item.regionalV1ResultRecord) && item.regionalV1ResultRecord?.id !== resultRecord.id && (!currentDate || String(item.record?.date || "") < currentDate))
+    .map((item) => ({ experience: item, row: item.regionalV1Result?.regions?.find((candidate) => candidate.regionId === regionId), signature: signatureFor(item.regionalV1ResultRecord, regionId) }))
+    .filter((item) => item.row && compareReference100Signatures(signature, item.signature).directDeltaAllowed)
     .sort((a, b) => String(b.experience.record?.date || "").localeCompare(String(a.experience.record?.date || "")));
 }
 function latestPrevious(args) { return comparableHistory(args)[0] || null; }
@@ -193,7 +199,7 @@ function focusReasonText(candidates) {
 }
 function renderOodCard(resultRecord) {
   const rows = staticRows();
-  return `<section class="result-card result-card--distribution result-card--regional-v27" data-new-model-v1-card data-information-role="model"><div class="result-card__heading"><div><p>部位別比較値</p><h2 id="new-model-regional-title">今回の速度はモデルの対象範囲外です</h2></div>${renderStatusLabel("数値なし", "neutral")}</div><p>現在の12部位モデルは平均速度2.25〜3.33 m/sの範囲で使用します。今回の対象速度は${escapeHtml(fmt(resultRecord?.result?.speed_mps, 2))} m/sです。記録自体は保存されています。</p><p class="source-boundary">範囲外の値を外挿して100や別の数値で補いません。</p><div class="new-model-v1-ood-map">${renderMap(resultRecord, rows, { unavailable: true })}</div><p class="muted-text">身体図から部位の位置は確認できますが、この記録には部位別数値を表示しません。</p></section>`;
+  return `<section class="result-card result-card--distribution result-card--regional-v27" data-new-model-v1-card data-information-role="model"><div class="result-card__heading"><div><p>部位別比較値</p><h2 id="distribution-title">今回の速度はモデルの対象範囲外です</h2></div>${renderStatusLabel("数値なし", "neutral")}</div><p>現在の12部位モデルは平均速度2.25〜3.33 m/sの範囲で使用します。今回の対象速度は${escapeHtml(fmt(resultRecord?.result?.speed_mps, 2))} m/sです。記録自体は保存されています。</p><p class="source-boundary">範囲外の値を外挿して100や別の数値で補いません。</p><div class="new-model-v1-ood-map">${renderMap(resultRecord, rows, { unavailable: true })}</div><p class="muted-text">身体図から部位の位置は確認できますが、この記録には部位別数値を表示しません。</p></section>`;
 }
 export function renderNewModelV1Card({ resultRecord, experiences = [], initialView = "focus", showPreviousComparison = true } = {}) {
   if (resultRecord?.state === "REST") return `<section class="result-card result-card--distribution" data-new-model-v1-card data-information-role="model"><div class="result-card__heading"><div><p>部位別比較値</p><h2>12部位の比較</h2></div>${renderStatusLabel("休養記録", "neutral")}</div><p>休養日には走行の部位別比較値を作成しません。</p></section>`;
@@ -207,9 +213,10 @@ export function renderNewModelV1Card({ resultRecord, experiences = [], initialVi
   const distance = modelDistanceKm(resultRecord);
   const referenceText = finite(referenceValue) ? fmt(referenceValue, 1) : "—";
   const focusContent = renderFocusContent(resultRecord, candidates, experiences, showPreviousComparison);
-  return `<section class="result-card result-card--distribution result-card--regional-v27" data-new-model-v1-card data-regional-v1-card data-regional-v1-view="${resolvedView}" data-information-role="model" aria-labelledby="new-model-regional-title">
-    <div class="result-card__heading"><div><p>今回の走行量と条件を含む部位別比較</p><h2 id="new-model-regional-title">12部位の比較値</h2></div>${renderStatusLabel("部位ごとの表示", "model")}</div>
+  return `<section class="result-card result-card--distribution result-card--regional-v27" data-new-model-v1-card data-regional-v1-card data-regional-v1-view="${resolvedView}" data-information-role="model" aria-labelledby="distribution-title">
+    <div class="result-card__heading"><div><p>今回の走行量と条件を含む部位別比較</p><h2 id="distribution-title">12部位の比較値</h2></div>${renderStatusLabel("部位ごとの表示", "model")}</div>
     <p class="inline-helper"><strong>100は各部位自身の1 km基準です。</strong>${finite(referenceValue) ? ` 今回の矢印・バー・身体図の色は、同距離基準${escapeHtml(referenceText)}と比べた方向を示します。` : ""} 部位間の順位や危険度を示すものではありません。</p>
+    ${resultRecord?.result?.combinedConditionState === "AXES_PRESERVED_NOT_COMBINED" ? '<p class="source-boundary"><strong>複数の条件は一つの値へ無理に掛け合わせていません。</strong> 勾配・路面・歩数ペースなどは、根拠が別々の場合に別推定として保持しています。部位詳細で確認できます。</p>' : ""}
     <div class="regional-v1-view-toggle" role="group" aria-label="表示する部位"><button type="button" data-regional-v1-view-button="focus" aria-pressed="${resolvedView === "focus"}"${hasFocus ? "" : " disabled"}>今回注目する部位${hasFocus ? ` (${candidates.length})` : ""}</button><button type="button" data-regional-v1-view-button="all" aria-pressed="${resolvedView === "all"}">全12部位</button></div>
     <ul class="regional-direction-legend" aria-label="身体図の色と記号"><li data-direction="above"><span aria-hidden="true">↑</span>同距離基準より上</li><li data-direction="reference"><span aria-hidden="true">=</span>同距離基準付近</li><li data-direction="below"><span aria-hidden="true">↓</span>同距離基準より下</li><li data-direction="unavailable"><span aria-hidden="true">—</span>表示なし</li></ul>
     <div class="regional-v1-overview">
@@ -232,6 +239,13 @@ function renderObservations(experience, regionId) {
   if (!observations.length) return '<p class="muted-text">この部位に対応する本人の身体記録はありません。</p>';
   return `<div class="subjective-entry-list">${observations.map((item) => `<article><h3>${escapeHtml(item.label || bodyRegionFormalName(regionId))}</h3><p>${escapeHtml(bodyAreaLateralityLabel(item.laterality))}・程度 ${escapeHtml(fmt(item.intensity, 0))}/5${item.noticedTiming ? `・${escapeHtml(observationTimingLabel(item.noticedTiming))}` : ""}</p>${item.note ? `<small>${escapeHtml(item.note)}</small>` : ""}</article>`).join("")}</div>`;
 }
+
+function axisLabel(axis="") { return ({grade:"勾配",surface:"路面",cadence:"歩数ペース"})[String(axis||"").toLowerCase()] || String(axis||"条件"); }
+function renderAxisEstimates(row={}) {
+  const axes=Array.isArray(row.axisEstimates)?row.axisEstimates:[];
+  if(!axes.length) return "";
+  return `<section class="result-card" data-information-role="model"><div class="result-card__heading"><div><p>条件を別々に確認</p><h2>一つに合成していない推定</h2></div>${renderStatusLabel("別推定", "info")}</div><p class="source-boundary">原典に同時条件の根拠がない場合、条件どうしを独立と仮定して掛け合わせません。</p><div class="regional-trend-table"><table><thead><tr><th>条件</th><th>比較値</th><th>根拠の扱い</th></tr></thead><tbody>${axes.map((a)=>`<tr><th>${escapeHtml(axisLabel(a.axis))}</th><td>${a.value==null?"数値なし":escapeHtml(fmt(a.value,1))}</td><td>${escapeHtml(provenanceLabel({evidenceState:a.evidenceState}))}</td></tr>`).join("")}</tbody></table></div></section>`;
+}
 export function renderNewModelV1Detail({ experience, regionId, experiences = [] } = {}) {
   const row = experience?.regionalV1Result?.regions?.find((item) => item.regionId === regionId);
   if (!row) return null;
@@ -247,12 +261,14 @@ export function renderNewModelV1Detail({ experience, regionId, experiences = [] 
   const sameDistanceReference = sameDistanceReferenceValue(resultRecord);
   return `<section class="screen screen--body-part-detail" data-new-model-v1-detail>
     ${renderPageHeading({ eyebrow: "結果の詳細", title: formal, description: `${formatLocalDate(experience.record.date)}の保存結果です。` })}
-    ${renderResultWorkspaceNavigation({ recordId: experience.record.id, date: experience.record.date, active: "region" })}
+    ${renderResultWorkspaceNavigation({ recordId: experience.record.id, date: experience.record.date, regionId, active: "region" })}
     <section class="result-card" data-information-role="model"><div class="result-card__heading"><div><p>今回の比較値</p><h2>${escapeHtml(fmt(row.value, 1))}</h2></div>${renderStatusLabel(sameDistanceDirection(resultRecord, row.value), "model")}</div>${familiar && familiar !== formal ? `<p class="muted-text">${escapeHtml(familiar)}</p>` : ""}<p><strong>100の意味：</strong>この部位の1 km基準走行に対応する比較用の座標です。安全・正常・平均・推奨を意味しません。</p>${finite(sameDistanceReference) ? `<p><strong>今回の同距離基準：</strong>${escapeHtml(fmt(sameDistanceReference, 1))}。今回と同じ計算対象距離にそろえた、この部位自身の比較基準です。</p>` : ""}<p><strong>この部位で表すこと：</strong>${escapeHtml(bodyRegionPlainMeaning(row.regionId, row.regionName))}</p><p><strong>今回の根拠範囲：</strong>${escapeHtml(provenanceLabel(row))}${optional.length ? `。${escapeHtml(optional.join("・"))}の条件を、根拠が合う範囲で反映しています。` : "。"}</p><p><strong>関連する原典：</strong>${escapeHtml(sources.join("、") || "保存された原典情報を確認できません")}</p><p class="source-boundary">この値は同じ部位の記録を振り返るための比較値です。別部位との順位付け、診断、傷害予測、危険判定には使いません。</p></section>
+    ${renderAxisEstimates(row)}
     <section class="result-card" data-information-role="fact"><div class="result-card__heading"><div><p>過去記録との比較</p><h2>同じ部位・同じ定義の記録</h2></div>${renderStatusLabel(`比較できる記録 ${history.length}件`, "info")}</div>${previous ? `<p><strong>前回との差：</strong>${delta >= 0 ? "+" : ""}${escapeHtml(fmt(delta, 1))}ポイント（${escapeHtml(formatLocalDate(previous.experience.record.date))}）</p><p class="muted-text">同じ部位・同じ数値定義・同じ基準・同じモデル版で直接比較できる最新の過去記録です。</p>` : '<p>同じ定義で比べられる過去記録はまだありません。</p>'}</section>
+    <section class="result-card" data-information-role="condition"><div class="result-card__heading"><div><p>理解を助ける読みもの</p><h2>今回の記録と関連する知見</h2></div></div><p>ここで読む一般資料は、今回の部位別比較値の数値係数・計算根拠そのものとは別です。走行条件や身体の使われ方を考えるための補助情報として確認できます。</p><a class="button button--secondary" href="#/column?recordId=${encodeURIComponent(experience.record.id)}&regionId=${encodeURIComponent(regionId)}">関連する読みものを開く</a></section>
     <section class="result-card" data-information-role="personal"><div class="result-card__heading"><div><p>本人の記録</p><h2>本人が入力した身体記録</h2></div>${renderStatusLabel("本人の記録", "info")}</div>${renderObservations(experience, regionId)}<p class="source-boundary">本人の身体記録と部位別比較値は別の情報です。両者を組み合わせて原因、危険度、走行の可否を判定しません。</p></section>
     <section class="result-card" data-information-role="limits"><div class="result-card__heading"><div><p>この表示の限界</p><h2>この表示だけでは分からないこと</h2></div></div><ul class="body-part-evidence-list"><li>筋肉・腱・骨・関節に加わった実際の力や損傷</li><li>障害名、発生確率、原因</li><li>走行の可否や安全の保証</li><li>異なる部位どうしの物理的な大小順位</li></ul></section>
     <details class="body-part-other-regions"><summary>今回の結果で別の部位を選ぶ</summary><nav class="body-part-navigation body-part-navigation--collapsed" aria-label="他の部位">${rows.filter((item) => item.regionId !== regionId).map((item) => `<a class="body-part-navigation__link" href="#/body-part-detail?recordId=${encodeURIComponent(experience.record.id)}&regionId=${encodeURIComponent(item.regionId)}"><strong>${escapeHtml(bodyRegionFormalName(item.regionId, item.regionName))}</strong><span>詳細</span></a>`).join("")}</nav></details>
-    <div class="screen-actions"><a class="button button--primary" href="#/history?view=trends&metric=region&recordId=${encodeURIComponent(experience.record.id)}&anchorDate=${encodeURIComponent(experience.record.date)}&regionId=${encodeURIComponent(regionId)}&period=28">この部位の推移を確認</a><a class="button button--secondary" href="#/result?recordId=${encodeURIComponent(experience.record.id)}">今回の結果へ戻る</a></div>
+    <div class="screen-actions"><a class="button button--secondary" href="#/result?recordId=${encodeURIComponent(experience.record.id)}">今回の結果へ戻る</a></div>
   </section>`;
 }

@@ -7,6 +7,11 @@ import {
   regionalV1ExposureMeta,
 } from "../model/regionalV1/regionalV1ResultService.js";
 import { summarizePersonalContext } from "../personal/personalContext.js";
+import {
+  PRIMARY_REGIONAL_V2_MODEL_VERSION,
+  buildPrimaryRegionalV2ComparisonSignature,
+  comparePrimaryRegionalV2Signatures,
+} from "../model/nextPrimaryR12Candidate/primaryRegionalV2ResultService.js";
 
 export const DETERMINISTIC_CONSULTATION_VERSION = "runload-deterministic-consultation-v1";
 
@@ -210,8 +215,82 @@ function contributorLabel(event = {}, exposure = {}) {
   return input;
 }
 
+function primaryExposureDistanceKm(experience = {}) {
+  const input = experience?.regionalV1ResultRecord?.engine_input_snapshot || {};
+  const runWalk = String(input.runningFormat || experience?.record?.runningFormat || "").toUpperCase() === "RUN_WALK";
+  const value = Number(runWalk ? input.runningDistanceKm : input.distanceKm);
+  if (value > 0) return value;
+  const record = experience?.record || {};
+  const fallback = Number(runWalk ? record.runWalkRunningDistanceKm : record.distanceKm);
+  return fallback > 0 ? fallback : null;
+}
+
+function primaryPreviousComparable(experience, allExperiences, regionId, currentRow) {
+  if (!finite(currentRow?.value)) return Object.freeze({ status: "CURRENT_CONDITION_UNAVAILABLE" });
+  const currentSignature = buildPrimaryRegionalV2ComparisonSignature(experience?.regionalV1ResultRecord, currentRow);
+  if (!currentSignature) return Object.freeze({ status: "CURRENT_CONDITION_UNAVAILABLE" });
+  const currentDate = String(experience?.record?.date || "");
+  const currentCreatedAt = String(experience?.record?.createdAt || "");
+  const earlier = (allExperiences || []).filter((item) => item?.record?.id && item.record.id !== experience?.record?.id).filter((item) => {
+    const date = String(item.record.date || "");
+    if (date < currentDate) return true;
+    return date === currentDate && String(item.record.createdAt || "") < currentCreatedAt;
+  }).sort((a,b)=>String(a.record.date||"").localeCompare(String(b.record.date||"")) || String(a.record.createdAt||"").localeCompare(String(b.record.createdAt||"")));
+  let sawRegion = false;
+  for (const prior of earlier.reverse()) {
+    const priorRecord = prior?.regionalV1ResultRecord;
+    const priorRow = prior?.regionalV1Result?.regions?.find((row) => row.regionId === regionId) || null;
+    if (!priorRow || !finite(priorRow.value)) continue;
+    sawRegion = true;
+    if (priorRecord?.model_version !== PRIMARY_REGIONAL_V2_MODEL_VERSION) continue;
+    const priorSignature = buildPrimaryRegionalV2ComparisonSignature(priorRecord, priorRow);
+    const compatibility = comparePrimaryRegionalV2Signatures(currentSignature, priorSignature);
+    if (!compatibility.directDeltaAllowed) continue;
+    return Object.freeze({
+      status: "COMPARABLE",
+      previous: Object.freeze({
+        recordId: prior.record.id,
+        date: prior.record.date,
+        displayConditionIndex: Number(priorRow.value),
+        referenceValue: 100 * Number(primaryExposureDistanceKm(prior) || 0),
+      }),
+      pointDelta: Number(currentRow.value) - Number(priorRow.value),
+      compatibility,
+    });
+  }
+  return Object.freeze({ status: sawRegion ? "NO_COMPARABLE_CONDITION_RECORD" : "NO_PREVIOUS_CONDITION_RECORD" });
+}
+
 function regionalContext(experience, allExperiences, regionId) {
   const row = experience?.regionalV1Result?.regions?.find((item) => item.regionId === regionId) || null;
+  const primary = experience?.regionalV1ResultRecord?.model_version === PRIMARY_REGIONAL_V2_MODEL_VERSION;
+  if (primary && row) {
+    const distanceKm = primaryExposureDistanceKm(experience);
+    const displayIndex = finite(row.value) ? Number(row.value) : null;
+    const referenceValue = finite(distanceKm) ? 100 * Number(distanceKm) : null;
+    const displayDeltaPoints = displayIndex !== null && referenceValue !== null ? displayIndex - referenceValue : null;
+    const region = REGION_BY_ID.get(regionId);
+    return Object.freeze({
+      state: row.calculationState || (displayIndex === null ? "UNAVAILABLE" : "CALCULATED"),
+      regionId,
+      regionLabel: row.regionName || region?.name || "選択した部位",
+      row,
+      displayIndex,
+      displayDeltaPoints,
+      referenceValue,
+      referenceDistanceKm: distanceKm,
+      endpoint: null,
+      exposure: experience?.regionalV1Result?.exposure || null,
+      semantic: null,
+      coverage: null,
+      contributors: Object.freeze([]),
+      axisEstimates: Object.freeze(Array.isArray(row.axisEstimates) ? row.axisEstimates : []),
+      evidenceState: row.evidenceState || row.provenance || "EVIDENCE_INSUFFICIENT",
+      combinedConditionState: experience?.regionalV1Result?.combinedConditionState || null,
+      previousComparable: primaryPreviousComparable(experience, allExperiences, regionId, row),
+      isPrimaryRegionalV2: true,
+    });
+  }
   const region = REGION_BY_ID.get(regionId);
   if (!row) {
     return Object.freeze({
@@ -291,7 +370,12 @@ function appendSection(lines, heading, items) {
 }
 
 function regionalCurrentLine(regional) {
-  if (regional.displayIndex === null) return `${regional.regionLabel}：条件応答の数値なし`;
+  if (regional.displayIndex === null) return `${regional.regionLabel}：${regional.isPrimaryRegionalV2 ? "部位別比較値" : "条件応答"}の数値なし`;
+  if (regional.isPrimaryRegionalV2) {
+    const ref = finite(regional.referenceValue) ? Number(regional.referenceValue) : null;
+    const delta = finite(regional.displayDeltaPoints) ? Number(regional.displayDeltaPoints) : null;
+    return `${regional.regionLabel}：部位別比較値 ${regional.displayIndex}${ref === null ? "" : `（同距離基準 ${ref}${delta === null ? "" : `、差 ${delta >= 0 ? "+" : ""}${Math.round(delta * 10) / 10}` }）`}`;
+  }
   const delta = regional.displayDeltaPoints == null
     ? ""
     : regional.displayDeltaPoints === 0
@@ -304,6 +388,14 @@ function comparisonLines(regional) {
   const comparison = regional.previousComparable;
   if (!comparison) return ["比較情報を作成できませんでした。"]; 
   if (comparison.status === "COMPARABLE") {
+    if (regional.isPrimaryRegionalV2) {
+      const delta = Number(comparison.pointDelta || 0);
+      return [
+        `今回：${regionalCurrentLine(regional)}`,
+        `前の比較可能記録：${comparison.previous.date}／部位別比較値 ${comparison.previous.displayConditionIndex}`,
+        `同じ数値定義で比べた差：${delta >= 0 ? "+" : ""}${Math.round(delta * 10) / 10}ポイント（走行対象距離も各保存値に含まれます）`,
+      ];
+    }
     const sign = comparison.percentChangeRounded > 0 ? "+" : "";
     return [
       `今回：${regionalCurrentLine(regional)}`,
@@ -334,12 +426,24 @@ function buildMemo({ purpose, record, feedback, audience, question, dataSelectio
   }
 
   if (selected.has("current-result") && regional.displayIndex !== null) {
-    appendSection(lines, "選択した部位の条件応答：", [
-      regionalCurrentLine(regional),
-      "この値の見方：根拠付きで数値化できる今回の走行条件への応答を、この部位自身の基準100と比べる表示です。",
-      "共通走行量はこの条件応答へ足さず、別の情報として扱います。",
-      "100は安全値・正常値・初心者平均ではなく、数値は身体を直接測った値でもありません。",
-    ]);
+    if (regional.isPrimaryRegionalV2) {
+      const conditionBoundary = regional.combinedConditionState === "AXES_PRESERVED_NOT_COMBINED"
+        ? "複数条件に同時作用の根拠がない場合、個別推定を一つの係数へ掛け合わせていません。"
+        : "数値化できる条件だけを、保存時の根拠状態とともに扱います。";
+      appendSection(lines, "選択した部位の比較値：", [
+        regionalCurrentLine(regional),
+        `この値の見方：100はこの部位自身の1 km基準です。今回は走行対象距離${finite(regional.referenceDistanceKm) ? ` ${regional.referenceDistanceKm} km` : ""}に合わせた同距離基準と確認します。`,
+        conditionBoundary,
+        "100は安全値・正常値・初心者平均ではなく、数値は身体を直接測った値でもありません。",
+      ]);
+    } else {
+      appendSection(lines, "選択した部位の条件応答：", [
+        regionalCurrentLine(regional),
+        "この値の見方：根拠付きで数値化できる今回の走行条件への応答を、この部位自身の基準100と比べる表示です。",
+        "共通走行量はこの条件応答へ足さず、別の情報として扱います。",
+        "100は安全値・正常値・初心者平均ではなく、数値は身体を直接測った値でもありません。",
+      ]);
+    }
   }
 
   if (purpose === "run_conditions" && selected.has("current-result")) {

@@ -1,6 +1,7 @@
 import { PERSONAL_PROFILE_SCHEMA_VERSION } from "../model/bodyProfileAdjustment.js";
 import { REGIONAL_V1_MODEL_VERSION } from "../model/regionalV1/regionalV1ResultService.js";
 import { NEW_MODEL_V1_MODEL_VERSION, validateNewModelV1ResultRecord } from "../model/newModelV1/newModelV1ResultService.js";
+import { PRIMARY_REGIONAL_V2_MODEL_VERSION, validatePrimaryRegionalV2ResultRecord } from "../model/nextPrimaryR12Candidate/primaryRegionalV2ResultService.js";
 import { REGIONAL_V1_MODEL_VERSION as V25R1_REGIONAL_V1_MODEL_VERSION } from "../model/v25r1Historical/regionalV1ResultService.js";
 import { REGIONAL_V1_MODEL_VERSION as FCR_V19_REGIONAL_V1_MODEL_VERSION } from "../model/regionalV1/fcrV19ResultService.js";
 import { REGIONAL_V1_MODEL_VERSION as LEGACY_PHASE4_REGIONAL_V1_MODEL_VERSION } from "../model/regionalV1/legacyPhase4ResultService.js";
@@ -14,7 +15,7 @@ import { validateCoursePresetInput } from "./courseRepository.js";
 import { STORAGE_KEYS, USER_DATA_STORAGE_KEYS } from "./storageKeys.js";
 
 export const RESTORE_INSPECTION_VERSION = "runload-restore-inspection-v1";
-const SUPPORTED_REGIONAL_MODEL_VERSIONS = new Set([NEW_MODEL_V1_MODEL_VERSION, REGIONAL_V1_MODEL_VERSION, V25R1_REGIONAL_V1_MODEL_VERSION, FCR_V19_REGIONAL_V1_MODEL_VERSION, LEGACY_PHASE4_REGIONAL_V1_MODEL_VERSION]);
+const SUPPORTED_REGIONAL_MODEL_VERSIONS = new Set([PRIMARY_REGIONAL_V2_MODEL_VERSION, NEW_MODEL_V1_MODEL_VERSION, REGIONAL_V1_MODEL_VERSION, V25R1_REGIONAL_V1_MODEL_VERSION, FCR_V19_REGIONAL_V1_MODEL_VERSION, LEGACY_PHASE4_REGIONAL_V1_MODEL_VERSION]);
 export const RESTORE_STATUS = Object.freeze({
   supported: "SUPPORTED",
   review: "REVIEW_REQUIRED",
@@ -142,7 +143,10 @@ function inspectRegionalResults(results, recordIds, issues) {
     if (!recordIds.has(String(item.record_id))) {
       issues.push(issue("BLOCKING", "REGIONAL_RECORD_REFERENCE_MISSING", "regionalResults", "部位別結果が参照する記録がバックアップ内にありません。", itemId));
     }
-    if (item.model_version === NEW_MODEL_V1_MODEL_VERSION) {
+    if (item.model_version === PRIMARY_REGIONAL_V2_MODEL_VERSION) {
+      const outputValidation = validatePrimaryRegionalV2ResultRecord(item);
+      if (!outputValidation.valid) issues.push(issue("BLOCKING", "PRIMARY_REGIONAL_V2_OUTPUT_INVALID", "regionalResults", "部位別比較値の12部位・入力追跡情報を確認できません。", itemId, { issueCodes: outputValidation.issues.slice(0, 20) }));
+    } else if (item.model_version === NEW_MODEL_V1_MODEL_VERSION) {
       const outputValidation = validateNewModelV1ResultRecord(item);
       if (!outputValidation.valid) issues.push(issue("BLOCKING", "NEW_MODEL_REGIONAL_OUTPUT_INVALID", "regionalResults", "新しい部位別結果の数値・12部位・入力追跡情報を確認できません。", itemId, { issueCodes: outputValidation.issues.slice(0, 20) }));
     } else {

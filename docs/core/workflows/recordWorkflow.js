@@ -9,12 +9,13 @@ import { createNewModelV1ResultRecord, upsertNewModelV1ResultRecord, NEW_MODEL_V
 import { createRegionalV1ResultRecord as createV25R1RegionalV1ResultRecord, REGIONAL_V1_MODEL_VERSION as V25R1_REGIONAL_V1_MODEL_VERSION } from "../model/v25r1Historical/regionalV1ResultService.js";
 import { createRegionalV1ResultRecord as createFcrV19RegionalV1ResultRecord, REGIONAL_V1_MODEL_VERSION as FCR_V19_REGIONAL_V1_MODEL_VERSION } from "../model/regionalV1/fcrV19ResultService.js";
 import { createRegionalV1ResultRecord as createLegacyPhase4RegionalV1ResultRecord, REGIONAL_V1_MODEL_VERSION as LEGACY_PHASE4_REGIONAL_V1_MODEL_VERSION } from "../model/regionalV1/legacyPhase4ResultService.js";
-import { isNewModelV1RegionalModelRecord, isV26C1RegionalModelRecord, isV25R1RegionalModelRecord, isFcrV19RegionalModelRecord, stampCurrentRegionalModel } from "../model/regionalV1/regionalModelSnapshot.js";
+import { isPrimaryRegionalV2Record, isNewModelV1RegionalModelRecord, isV26C1RegionalModelRecord, isV25R1RegionalModelRecord, isFcrV19RegionalModelRecord, stampCurrentRegionalModel } from "../model/regionalV1/regionalModelSnapshot.js";
 import { validateRegionalEngineOutput } from "../model/regionalV1/engine/validation.js";
 import { normalizeRunningRecord, validateRunningRecord, validateRunningRecordInput } from "../safety/inputValidation.js";
 import { normalizeSubjectiveFeedback } from "../safety/subjectiveFeedback.js";
 import { evaluateSupportDecision } from "../safety/supportDecision.js";
 import { STORAGE_KEYS } from "../storage/storageKeys.js";
+import { createPrimaryRegionalV2ResultRecord, upsertPrimaryRegionalV2ResultRecord, validatePrimaryRegionalV2ResultRecord, PRIMARY_REGIONAL_V2_MODEL_VERSION } from "../model/nextPrimaryR12Candidate/primaryRegionalV2ResultService.js";
 
 function cloneValue(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -42,6 +43,7 @@ function upsertById(items, item, getId) {
 }
 
 function regionalResultCreatorForRecord(record = {}) {
+  if (isPrimaryRegionalV2Record(record)) return createPrimaryRegionalV2ResultRecord;
   if (isNewModelV1RegionalModelRecord(record)) return createNewModelV1ResultRecord;
   if (isV26C1RegionalModelRecord(record)) return createRegionalV1ResultRecord;
   if (isV25R1RegionalModelRecord(record)) return createV25R1RegionalV1ResultRecord;
@@ -50,6 +52,7 @@ function regionalResultCreatorForRecord(record = {}) {
 }
 
 function regionalModelVersionForRecord(record = {}) {
+  if (isPrimaryRegionalV2Record(record)) return PRIMARY_REGIONAL_V2_MODEL_VERSION;
   if (isNewModelV1RegionalModelRecord(record)) return NEW_MODEL_V1_MODEL_VERSION;
   if (isV26C1RegionalModelRecord(record)) return REGIONAL_V1_MODEL_VERSION;
   if (isV25R1RegionalModelRecord(record)) return V25R1_REGIONAL_V1_MODEL_VERSION;
@@ -87,11 +90,15 @@ function createModelExperience(
   let regionalV1ResultRecord = storedRegionalV1ResultRecord;
   let regionalV1Recovery = null;
   if (storedRegionalV1ResultRecord) {
+    const primaryStored = storedRegionalV1ResultRecord.model_version === PRIMARY_REGIONAL_V2_MODEL_VERSION;
     const newModelStored = storedRegionalV1ResultRecord.model_version === NEW_MODEL_V1_MODEL_VERSION;
+    const primaryValidation = primaryStored ? validatePrimaryRegionalV2ResultRecord(storedRegionalV1ResultRecord) : null;
     const newValidation = newModelStored ? validateNewModelV1ResultRecord(storedRegionalV1ResultRecord) : null;
-    const validation = newModelStored ? { valid: newValidation.valid, issues: newValidation.issues.map((code) => ({ code })) } : validateRegionalEngineOutput(storedRegionalV1ResultRecord.result || {});
+    const validation = primaryStored
+      ? { valid: primaryValidation.valid, issues: primaryValidation.issues.map((code) => ({ code })) }
+      : (newModelStored ? { valid: newValidation.valid, issues: newValidation.issues.map((code) => ({ code })) } : validateRegionalEngineOutput(storedRegionalV1ResultRecord.result || {}));
     const bodyMapRegions = storedRegionalV1ResultRecord.body_map_payload?.regions;
-    const bodyMapValid = newModelStored && storedRegionalV1ResultRecord.result?.state === "BASELINE_OOD" ? true : (Array.isArray(bodyMapRegions) && bodyMapRegions.length === 12);
+    const bodyMapValid = newModelStored && storedRegionalV1ResultRecord.result?.state === "BASELINE_OOD" ? true : (primaryStored && storedRegionalV1ResultRecord.state === "REST" ? true : (Array.isArray(bodyMapRegions) && bodyMapRegions.length === 12));
     if (!validation.valid || !bodyMapValid) {
       const sessionSequence = sortedRecords
         .filter((item) => item.date === record.date)
@@ -201,6 +208,7 @@ export function createRecordWorkflow({
     const regionalRead = loadCollectionForMutation(modelResultRegionalV1Repository, "modelResultsRegionalV1");
     if (!regionalRead.ok) return regionalRead;
 
+
     const currentRecords = recordsRead.items;
     const currentFeedback = feedbackRead.items;
     const existingRecord = recordInput.id
@@ -227,6 +235,7 @@ export function createRecordWorkflow({
       : existingRecord?.bodyProfileSnapshot || null;
     const versionedRecordInput = stampCurrentRegionalModel({
       ...recordInput,
+      regionalModelSnapshot: existingRecord?.regionalModelSnapshot || recordInput.regionalModelSnapshot,
       bodyProfileSnapshot,
       createdAt: existingRecord?.createdAt || recordInput.createdAt,
     });
@@ -294,9 +303,11 @@ export function createRecordWorkflow({
     if (!regionalCalculation.ok) {
       return { ok: false, code: regionalCalculation.code || "REGIONAL_V1_RESULT_CREATION_FAILED", validation: regionalCalculation.validation || null, message: regionalCalculation.error?.messageKey || "" };
     }
-    const nextRegionalV1Results = isNewModelV1RegionalModelRecord(normalizedRecord)
-      ? upsertNewModelV1ResultRecord(currentRegionalV1Results, regionalCalculation.resultRecord)
-      : upsertRegionalV1ResultRecord(currentRegionalV1Results, regionalCalculation.resultRecord);
+    const nextRegionalV1Results = isPrimaryRegionalV2Record(normalizedRecord)
+      ? upsertPrimaryRegionalV2ResultRecord(currentRegionalV1Results, regionalCalculation.resultRecord)
+      : (isNewModelV1RegionalModelRecord(normalizedRecord)
+        ? upsertNewModelV1ResultRecord(currentRegionalV1Results, regionalCalculation.resultRecord)
+        : upsertRegionalV1ResultRecord(currentRegionalV1Results, regionalCalculation.resultRecord));
 
     const changes = [
       { key: STORAGE_KEYS.records, value: nextRecords },
@@ -320,6 +331,7 @@ export function createRecordWorkflow({
       record: cloneValue(normalizedRecord),
       feedback: cloneValue(normalizedFeedback),
       resultRecord: cloneValue(calculation.resultRecord),
+      primaryRegionalV2ResultRecord: isPrimaryRegionalV2Record(normalizedRecord) ? cloneValue(regionalCalculation.resultRecord) : null,
       experience: createModelExperience(
         nextRecords,
         nextFeedback,

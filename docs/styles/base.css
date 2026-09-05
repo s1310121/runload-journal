@@ -63,3 +63,10 @@ small { line-height: 1.45; }
 @media print {
   a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.8em; overflow-wrap: anywhere; }
 }
+
+
+/* Weekend date colors are semantic and remain independent of the selectable accent theme. */
+.date-weekend--sat { color: var(--color-weekend-saturday) !important; }
+.date-weekend--sun { color: var(--color-weekend-sunday) !important; }
+svg .date-weekend--sat { fill: var(--color-weekend-saturday) !important; }
+svg .date-weekend--sun { fill: var(--color-weekend-sunday) !important; }

@@ -1,0 +1,7 @@
+{
+  "name": "runload-v2-8-formal-current-docs",
+  "private": true,
+  "type": "module",
+  "description": "RunLoad Formal Current V2.8 public runtime; Primary NEW_MODEL_V1 12-region output + Secondary runload-load-model-v2.7 whole-run comparison; C8I3R4 UI; V2.8R1 documentation-only master refinement",
+  "version": "2.8.0"
+}
